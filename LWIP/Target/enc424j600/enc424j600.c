@@ -110,15 +110,21 @@ void enc424j600SendSystemReset(void)
 		enc424j600BFSReg(ECON2, ECON2_ETHRST);
 		currentBank = 0;
 		while( (enc424j600ReadReg(ESTAT) & (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY)) != (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY) );
+
 		//_delay_us(300);
+		volatile uint32_t delay = ( 0.0003f * 180000000.0f );
+		while( delay-- );
+
 		// Check to see if the reset operation was successful by
 		// checking if EUDAST went back to its reset default.  This test
 		// should always pass, but certain special conditions might make
 		// this test fail, such as a PSP pin shorted to logic high.
-	} while (enc424j600ReadReg(EUDAST) != 0x0000u);
+	} while( enc424j600ReadReg(EUDAST) != 0x0000u );
 
 	// Really ensure reset is done and give some time for power to be stable
 	//_delay_ms(1);
+	volatile uint32_t delay = ( 0.001f * 180000000.0f );
+	while( delay-- );
 }
 
 void enc424j600EventHandler(void)
@@ -127,7 +133,8 @@ void enc424j600EventHandler(void)
 
 	eirVal = enc424j600ReadReg( EIRL );
 
-	if( eirVal ) {
+	if( eirVal )
+	{
 		if( ( eirVal & EIR_RXABTIF ) || ( eirVal & EIR_PCFULIF ) ) { // buffer overflow
 			//printf_P( PSTR("enc424j600EventHandler(): enc424j600ResetReceiver()\n") );
 			enc424j600ResetReceiver();
@@ -169,11 +176,12 @@ char enc424j600MACIsTxReady(void)
 	return !( ECON1_TXRTS & enc424j600ReadReg(ECON1) );
 }
 
-char enc424j600PacketSend(uint8_t* packet, uint16_t len)
+char enc424j600PacketSend( uint8_t* packet, uint16_t len )
 {
-	spi_high_frequency();
+	//spi_high_frequency();
 
-	if( ECON1_TXRTS & enc424j600ReadReg(ECON1L) ) {
+	if( ECON1_TXRTS & enc424j600ReadReg( ECON1L ) )
+	{
 		return 0;
 	}
 
@@ -185,14 +193,15 @@ char enc424j600PacketSend(uint8_t* packet, uint16_t len)
 	return 1;
 }
 
-uint16_t enc424j600PacketReceive(uint8_t* packet, uint16_t len)
+uint16_t enc424j600PacketReceive( uint8_t* packet, uint16_t len )
 {
 	RXSTATUS statusVector;
 	uint16_t newRXTail;
 
-	spi_high_frequency();
+	//spi_high_frequency();
 
-	if( !( EIR_PKTIF & enc424j600ReadReg(EIR) ) ) {
+	if( !( EIR_PKTIF & enc424j600ReadReg( EIR ) ) )
+	{
 		return 0;
 	}
 
@@ -205,7 +214,8 @@ uint16_t enc424j600PacketReceive(uint8_t* packet, uint16_t len)
 
 	newRXTail = nextPacketPointer - 2;
 
-	if( RXSTART == nextPacketPointer ) {
+	if( RXSTART == nextPacketPointer )
+	{
 		newRXTail = RAMSIZE - 2;
 	}
 
@@ -224,12 +234,14 @@ void enc424j600MACFlush(void)
 	// different node.  Auto-negotiation will automatically set
 	// the duplex in the PHY, but we must also update the MAC
 	// inter-packet gap timing and duplex state to match.
-	if(enc424j600ReadReg(EIR) & EIR_LINKIF) {
+	if( EIR_LINKIF & enc424j600ReadReg(EIR) )
+	{
 		enc424j600BFCReg(EIR, EIR_LINKIF);
 
 		// Update MAC duplex settings to match PHY duplex setting
-		w = enc424j600ReadReg(MACON2);
-		if (enc424j600ReadReg(ESTAT) & ESTAT_PHYDPX) {
+		w = enc424j600ReadReg( MACON2 );
+		if( ESTAT_PHYDPX & enc424j600ReadReg(ESTAT) )
+		{
 			// Switching to full duplex
 			enc424j600WriteReg(MABBIPG, 0x15);
 			w |= MACON2_FULDPX;
@@ -250,8 +262,10 @@ void enc424j600MACFlush(void)
 	// ultimately stall the Microchip TCP/IP stack since there is blocking code
 	// elsewhere in other files that expect the TX engine to always self-free
 	// itself very quickly.
-	if (enc424j600ReadReg(ESTAT) & ESTAT_PHYLNK)
+	if( ESTAT_PHYLNK & enc424j600ReadReg(ESTAT) )
+	{
 		enc424j600BFSReg(ECON1, ECON1_TXRTS);
+	}
 }
 
 /********************************************************************
@@ -385,24 +399,15 @@ void enc424j600WritePHYReg(uint8_t address, uint16_t Data)
 	enc424j600WriteReg(MIWR, Data);
 
 	// Wait until the PHY register has been written
-	while (enc424j600ReadReg(MISTAT) & MISTAT_BUSY);
+	while( enc424j600ReadReg(MISTAT) & MISTAT_BUSY );
 }
 
 static void enc424j600ReadN(uint8_t op, uint8_t* data, uint16_t dataLen)
 {
 	select_net_chip();
 
-	// issue read command
-//	SPDR = op;
-	// wail until all is sent
-//	while (!(SPSR & (1 << SPIF)));
-
-	while (dataLen--) {
-		// wait for answer
-//		SPDR = 0x00;
-//		while(!(SPSR & (1 << SPIF)));
-//		*data++ = SPDR;
-	}
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
+	HAL_SPI_Receive( &hspi2, data, dataLen, 100 );
 
 	unselect_net_chip();
 }
@@ -411,17 +416,8 @@ static void enc424j600WriteN(uint8_t op, uint8_t* data, uint16_t dataLen)
 {
 	select_net_chip();
 
-	// issue read command
-//	SPDR = op;
-	// wail until all is sent
-//	while(!(SPSR & (1 << SPIF)));
-	
-	while(dataLen--) {
-		// start sending data to SPI
-//		SPDR = *data++;
-		// wail until all is sent
-//		while (!(SPSR & (1 << SPIF)));
-	}
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
+	HAL_SPI_Transmit( &hspi2, data, dataLen, 100 );
 	
 	unselect_net_chip();
 }
@@ -479,16 +475,8 @@ static void enc424j600BFCReg(uint16_t address, uint16_t bitMask)
  */
 static void enc424j600ExecuteOp0( uint8_t op )
 {
-	//uint8_t dummy;
-
 	select_net_chip();
 
-	// issue read command
-	//SPDR = op;
-	// wail until all is sent
-	//while (!(SPSR & (1 << SPIF)));
-	// read answer
-	//dummy = SPDR;
 	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
 
 	unselect_net_chip();
@@ -505,18 +493,7 @@ uint8_t enc424j600ExecuteOp8( uint8_t op, uint8_t data )
 
 	select_net_chip();
 
-	// issue write command
-	//SPDR = op;
-	// wail until all is sent
-	//while (!(SPSR & (1 << SPIF)));
 	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-
-	// start sending data to SPI
-	//SPDR = data;
-	// wain until all is sent
-	//while (!(SPSR & (1 << SPIF)));
-	// read answer
-	//returnValue = SPDR;
 	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 1, 100 );
 
 	unselect_net_chip();
@@ -535,23 +512,7 @@ uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
 
 	select_net_chip();
 
-	// issue write command
-	//SPDR = op;
-	// wail until all is sent
-	//while (!(SPSR & (1 << SPIF)));
 	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-
-	// in this cycle, data are sent
-	//for( uint8_t x = 0; x < 2; x++ )
-	//{
-		// start sending data to SPI
-		//SPDR = ((uint8_t*) & data)[x];
-		// wain until all is sent
-		//while (!(SPSR & (1 << SPIF)));
-		// read answer
-		//((uint8_t*) & returnValue)[x] = SPDR;
-	//}
-
 	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 2, 100 );
 
 	unselect_net_chip();
@@ -570,23 +531,7 @@ uint32_t enc424j600ExecuteOp32( uint8_t op, uint32_t data )
 
 	select_net_chip();
 
-	// issue write command
-	//SPDR = op;
-	// wail until all is sent
-	//while (!(SPSR & (1 << SPIF)));
 	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-
-	// in this cycle, data are sent
-	//for( uint8_t x = 0; x < 3; x++ )
-	//{
-		// start sending data to SPI
-		//SPDR = ((uint8_t*) & data)[x];
-		// wain until all is sent
-		//while (!(SPSR & (1 << SPIF)));
-		// read answer
-		//((uint8_t*) & returnValue)[x] = SPDR;
-	//}
-
 	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 4, 100 );
 
 	unselect_net_chip();

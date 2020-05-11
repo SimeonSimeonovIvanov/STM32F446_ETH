@@ -50,7 +50,7 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 128 * 4
+  .stack_size = 2000 * 4
 };
 /* USER CODE BEGIN PV */
 /* USER CODE END PV */
@@ -101,9 +101,7 @@ int main(void)
   MX_SPI2_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-  uint8_t mac[6] = { 0, 1, 2, 3, 4, 5 };
-  enc424j600Init( mac );
-  MX_LWIP_Init();
+  StartDefaultTask(0);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -285,11 +283,14 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+	MX_LWIP_Init();
+
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+	for(;;)
+	{
+		MX_LWIP_Process();
+		//osDelay(1);
+	}
   /* USER CODE END 5 */ 
 }
 

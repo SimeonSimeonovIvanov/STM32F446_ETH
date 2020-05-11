@@ -805,7 +805,8 @@ typedef union __attribute__((aligned(2), packed)) {
 
 #define unselect_net_chip()\
 {\
-	HAL_GPIO_WritePin( CS0_GPIO_Port, CS1_Pin | CS0_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
 }
 
 void enc424j600EventHandler(void);
