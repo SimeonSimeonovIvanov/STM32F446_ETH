@@ -96,6 +96,13 @@ ethernet_input(struct pbuf *p, struct netif *netif)
     goto free_and_return;
   }
 
+  if(p->len>=70)
+  {
+	  volatile uint8_t test = 0;
+	  test = p->len;
+	  test = test;
+  }
+
   if (p->if_idx == NETIF_NO_INDEX) {
     p->if_idx = netif_get_index(netif);
   }

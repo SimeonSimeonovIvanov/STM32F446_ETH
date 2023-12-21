@@ -17,7 +17,6 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
@@ -26,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lwip.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,8 +49,13 @@ SPI_HandleTypeDef hspi2;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 2000 * 4
+};
+/* Definitions for myBinarySemSpi */
+osSemaphoreId_t myBinarySemSpiHandle;
+const osSemaphoreAttr_t myBinarySemSpi_attributes = {
+  .name = "myBinarySemSpi"
 };
 /* USER CODE BEGIN PV */
 /* USER CODE END PV */
@@ -62,7 +67,7 @@ static void MX_SPI2_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-extern void MX_LWIP_Init(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -101,7 +106,7 @@ int main(void)
   MX_SPI2_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-  StartDefaultTask(0);
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -110,6 +115,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of myBinarySemSpi */
+  myBinarySemSpiHandle = osSemaphoreNew(1, 1, &myBinarySemSpi_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -131,9 +140,13 @@ int main(void)
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
   /* Start scheduler */
   osKernelStart();
- 
+
   /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -155,11 +168,12 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage 
+  /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -174,13 +188,13 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Activate the Over-Drive mode 
+  /** Activate the Over-Drive mode
   */
   if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -218,7 +232,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -270,28 +284,44 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+#include "../../lwip/Target/enc424j600/enc424j600.h"
+extern osSemaphoreId s_xSemaphore;
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
 /**
   * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used 
+  * @param  argument: Not used
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	MX_LWIP_Init();
-
+  MX_LWIP_Init();
   /* Infinite loop */
-	for(;;)
+  /* Infinite loop */
+  for(;;)
+  {
+
+	 //enc424j600EventHandler();
+	//if( EIR_PKTIF & enc424j600EventHandler() ) //enc424j600ReadReg( EIRL ) )
+	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
 	{
-		MX_LWIP_Process();
-		//osDelay(1);
+		if( EIR_PKTIF & enc424j600ReadReg( EIR ) )
+		{
+			enc424j600BFCReg(EIR, EIR_PKTIF);
+
+			if( NULL != s_xSemaphore )
+			{
+				osSemaphoreRelease(s_xSemaphore);
+			}
+		}
+		xSemaphoreGive( myBinarySemSpiHandle );
 	}
-  /* USER CODE END 5 */ 
+	osDelay(1);
+  }
+  /* USER CODE END 5 */
 }
 
 /**
@@ -302,7 +332,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-
+  __disable_irq();
+  while (1)
+  {
+  }
   /* USER CODE END Error_Handler_Debug */
 }
 
@@ -315,10 +348,10 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
-     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

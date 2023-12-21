@@ -6,7 +6,7 @@
   ******************************************************************************
   * @attention
   *
-  * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
+  * <h2><center>&copy; Copyright (c) 2021 STMicroelectronics.
   * All rights reserved.</center></h2>
   *
   * This software component is licensed by ST under Ultimate Liberty license
@@ -16,7 +16,7 @@
   *
   ******************************************************************************
   */
-  
+
 /* Includes ------------------------------------------------------------------*/
 #include "lwip.h"
 #include "lwip/init.h"
@@ -24,6 +24,8 @@
 #if defined ( __CC_ARM )  /* MDK ARM Compiler */
 #include "lwip/sio.h"
 #endif /* MDK ARM Compiler */
+#include "ethernetif.h"
+#include <string.h>
 
 /* USER CODE BEGIN 0 */
 
@@ -31,13 +33,14 @@
 /* Private function prototypes -----------------------------------------------*/
 /* ETH Variables initialization ----------------------------------------------*/
 void Error_Handler(void);
-
 /* DHCP Variables initialization ---------------------------------------------*/
-uint32_t DHCPfineTimer = 0;
-uint32_t DHCPcoarseTimer = 0;
+
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
+osSemaphoreId Netif_LinkSemaphore = NULL;
+/* Ethernet link thread Argument */
+struct link_str link_arg;
 
 /* Variables Initialization */
 struct netif gnetif;
@@ -45,45 +48,90 @@ ip4_addr_t ipaddr;
 ip4_addr_t netmask;
 ip4_addr_t gw;
 
+#define INTERFACE_THREAD_STACK_SIZE ( 1024 )
+osThreadAttr_t attributes;
 /* USER CODE BEGIN 2 */
+/*Static IP ADDRESS*/
+#define IP_ADDR0   192
+#define IP_ADDR1   168
+#define IP_ADDR2   100
+#define IP_ADDR3   20
 
+/*NETMASK*/
+#define NETMASK_ADDR0   255
+#define NETMASK_ADDR1   255
+#define NETMASK_ADDR2   255
+#define NETMASK_ADDR3   0
+
+/*Gateway Address*/
+#define GW_ADDR0   0
+#define GW_ADDR1   0
+#define GW_ADDR2   0
+#define GW_ADDR3   0
 /* USER CODE END 2 */
+
+
 
 /**
   * LwIP initialization function
   */
 void MX_LWIP_Init(void)
 {
-  /* Initilialize the LwIP stack without RTOS */
-  lwip_init();
+  /* Initilialize the LwIP stack with RTOS */
+  tcpip_init( NULL, NULL );
+  LOCK_TCPIP_CORE();
 
   /* IP addresses initialization with DHCP (IPv4) */
-  ipaddr.addr = 0;
-  netmask.addr = 0;
-  gw.addr = 0;
+#ifdef USE_DHCP
+    ipaddr.addr = 0;
+    netmask.addr = 0;
+    gw.addr = 0;
+#else
+    IP4_ADDR(&ipaddr, IP_ADDR0, IP_ADDR1, IP_ADDR2, IP_ADDR3);
+    IP4_ADDR(&netmask, NETMASK_ADDR0, NETMASK_ADDR1, NETMASK_ADDR2, NETMASK_ADDR3);
+    IP4_ADDR(&gw, GW_ADDR0, GW_ADDR1, GW_ADDR2, GW_ADDR3);
+#endif
 
-  /* add the network interface (IPv4/IPv6) without RTOS */
-  netif_add(&gnetif, &ipaddr, &netmask, &gw, NULL, &ethernetif_init, &ethernet_input);
+  /* add the network interface (IPv4/IPv6) with RTOS */
+  netif_add(&gnetif, &ipaddr, &netmask, &gw, NULL, &ethernetif_init, &tcpip_input);
 
   /* Registers the default network interface */
   netif_set_default(&gnetif);
 
+  netif_set_addr(&gnetif, &ipaddr, &netmask, &gw);
+
   if (netif_is_link_up(&gnetif))
   {
     /* When the netif is fully configured this function must be called */
-    netif_set_up(&gnetif);
-  }
-  else
-  {
+	  netif_set_up(&gnetif);
+  } else {
     /* When the netif link is down this function must be called */
-    netif_set_down(&gnetif);
+	  netif_set_down(&gnetif);
   }
+
+  /* Set the link callback function, this function is called on change of link status*/
+  netif_set_link_callback(&gnetif, ethernetif_update_config);
 
   /* Start DHCP negotiation for a network interface (IPv4) */
-  dhcp_start(&gnetif);
+  Netif_LinkSemaphore = osSemaphoreNew(1, 1, NULL);
 
+  link_arg.netif = &gnetif;
+  link_arg.semaphore = Netif_LinkSemaphore;
+  /* Create the Ethernet link handler thread */
 /* USER CODE BEGIN 3 */
+  memset(&attributes, 0x0, sizeof(osThreadAttr_t));
+  attributes.name = "LinkThr";
+  attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
+  attributes.priority = 24;
+  osThreadNew(ethernetif_set_link, &link_arg, &attributes);
 
+/* USER CODE END 3 */
+  UNLOCK_TCPIP_CORE();
+  /* Start DHCP negotiation for a network interface (IPv4) */
+  //dhcp_start(&gnetif);
+
+/* USER CODE BEGIN 4_3 */
+/* USER CODE END 4_3 */
 /* USER CODE END 3 */
 }
 
@@ -91,34 +139,8 @@ void MX_LWIP_Init(void)
 /* Kept to help code migration. (See new 4_1, 4_2... sections) */
 /* Avoid to use this user section which will become obsolete. */
 /* USER CODE BEGIN 4 */
-/* USER CODE END 4 */
+
 #endif
-
-/**
- * ----------------------------------------------------------------------
- * Function given to help user to continue LwIP Initialization
- * Up to user to complete or change this function ...
- * Up to user to call this function in main.c in while (1) of main(void) 
- *-----------------------------------------------------------------------
- * Read a received packet from the Ethernet buffers 
- * Send it to the lwIP stack for handling
- * Handle timeouts if LWIP_TIMERS is set and without RTOS
- * Handle the llink status if LWIP_NETIF_LINK_CALLBACK is set and without RTOS 
- */
-void MX_LWIP_Process(void)
-{
-/* USER CODE BEGIN 4_1 */
-/* USER CODE END 4_1 */
-  ethernetif_input(&gnetif);
-  
-/* USER CODE BEGIN 4_2 */
-/* USER CODE END 4_2 */  
-  /* Handle timeouts */
-  sys_check_timeouts();
-
-/* USER CODE BEGIN 4_3 */
-/* USER CODE END 4_3 */
-}
 
 #if defined ( __CC_ARM )  /* MDK ARM Compiler */
 /**
@@ -134,7 +156,7 @@ sio_fd_t sio_open(u8_t devnum)
 /* USER CODE BEGIN 7 */
   sd = 0; // dummy code
 /* USER CODE END 7 */
-	
+
   return sd;
 }
 
@@ -169,7 +191,7 @@ u32_t sio_read(sio_fd_t fd, u8_t *data, u32_t len)
 
 /* USER CODE BEGIN 9 */
   recved_bytes = 0; // dummy code
-/* USER CODE END 9 */	
+/* USER CODE END 9 */
   return recved_bytes;
 }
 
@@ -188,7 +210,7 @@ u32_t sio_tryread(sio_fd_t fd, u8_t *data, u32_t len)
 
 /* USER CODE BEGIN 10 */
   recved_bytes = 0; // dummy code
-/* USER CODE END 10 */	
+/* USER CODE END 10 */
   return recved_bytes;
 }
 #endif /* MDK ARM Compiler */

@@ -29,17 +29,13 @@
 		<nature>com.st.stm32cube.ide.mcu.MCURootProjectNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
+		<nature>com.st.stm32cube.ide.mcu.MCUCubeIdeServicesRevAev2ProjectNature</nature>
 	</natures>
 	<linkedResources>
 		<link>
 			<name>LWIP/Target/enc424j600</name>
 			<type>2</type>
-			<location>D:/Developments/Projects/RND/PLC/ARM/STM32F446_ETH/LWIP/Target/enc424j600</location>
-		</link>
-		<link>
-			<name>LWIP/Target/enc424j600/tcpip_types.h</name>
-			<type>1</type>
-			<location>D:/Developments/Projects/RND/PLC/ARM/STM32F446_ETH/LWIP/Target/enc424j600/tcpip_types.h</location>
+			<location>E:/Developments/Projects/RND/PLC/FW/Work/STM32F446_ETH/LWIP/Target/enc424j600</location>
 		</link>
 	</linkedResources>
 </projectDescription>

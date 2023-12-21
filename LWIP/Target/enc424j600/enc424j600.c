@@ -18,7 +18,8 @@
  * 
  * ****************************************/
 
-extern SPI_HandleTypeDef hspi2;
+#include "cmsis_os.h"
+#include "semphr.h"
 
 #include "enc424j600.h"
 
@@ -28,23 +29,38 @@ extern SPI_HandleTypeDef hspi2;
 #define GP_WINDOW				(0x2)
 #define RX_WINDOW				(0x4)
 
+extern SPI_HandleTypeDef hspi2;
+extern osSemaphoreId_t myBinarySemSpiHandle;
+
 // Internal MAC level variables and flags.
 static uint8_t currentBank;
-static uint16_t nextPacketPointer;
+static volatile uint16_t nextPacketPointer;
 
-static uint16_t enc424j600ReadReg(uint16_t address);
+//static uint16_t enc424j600ReadReg(uint16_t address);
 static void enc424j600WriteReg(uint16_t address, uint16_t data);
 static void enc424j600ExecuteOp0(uint8_t op);
 static void enc424j600BFSReg(uint16_t address, uint16_t bitMask);
-static void enc424j600BFCReg(uint16_t address, uint16_t bitMask);
+void enc424j600BFCReg(uint16_t address, uint16_t bitMask);
 static void enc424j600WriteN(uint8_t op, uint8_t* data, uint16_t dataLen);
 static void enc424j600ReadN(uint8_t op, uint8_t* data, uint16_t dataLen);
+static uint8_t enc424j600ExecuteOp8(uint8_t op, uint8_t data);
+static uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data );
+static uint32_t enc424j600ExecuteOp32( uint8_t op, uint32_t data );
+
+static void enc424j600MACFlush(void);
+static void enc424j600ReadMemoryWindow(uint8_t window, uint8_t *data, uint16_t length);
+static void enc424j600WriteMemoryWindow(uint8_t window, uint8_t *data, uint16_t length);
+
+static uint16_t enc424j600ReadPHYReg(uint8_t address);
+static void enc424j600WritePHYReg(uint8_t address, uint16_t Data);
 
 /********************************************************************
  * INITIALIZATION
  * ******************************************************************/
 void enc424j600Init(uint8_t *mac_addr)
 {
+	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	{
 	//Set default bank
 	currentBank = 0;
 	unselect_net_chip();
@@ -54,8 +70,6 @@ void enc424j600Init(uint8_t *mac_addr)
 
 	// Initialize RX tracking variables and other control state flags
 	nextPacketPointer = RXSTART;
-
-	//spi_high_frequency();
 
 	// Set up TX/RX/UDA buffer addresses
 	enc424j600WriteReg(ETXST, TXSTART);
@@ -77,9 +91,9 @@ void enc424j600Init(uint8_t *mac_addr)
 	mac_addr[5] = ((uint8_t*) & regValue)[1];
 
 	// If promiscuous mode is set, than allow accept all packets
-	#ifdef PROMISCUOUS_MODE
-	enc424j600WriteReg(ERXFCON,(ERXFCON_CRCEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_NOTMEEN | ERXFCON_MCEN));
-	#endif
+#ifdef PROMISCUOUS_MODE
+	enc424j600WriteReg(ERXFCON,(ERXFCON_CRCEN | ERXFCON_MPEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_NOTMEEN | ERXFCON_MCEN | ERXFCON_BCEN));
+#endif
 
 	// Set PHY Auto-negotiation to support 10BaseT Half duplex,
 	// 10BaseT Full duplex, 100BaseTX Half Duplex, 100BaseTX Full Duplex,
@@ -88,6 +102,8 @@ void enc424j600Init(uint8_t *mac_addr)
 
 	// Enable RX packet reception
 	enc424j600BFSReg(ECON1, ECON1_RXEN);
+		xSemaphoreGive( myBinarySemSpiHandle );
+	}
 }
 
 /********************************************************************
@@ -95,6 +111,9 @@ void enc424j600Init(uint8_t *mac_addr)
  * ******************************************************************/
 void enc424j600SendSystemReset(void)
 {
+	//if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	{
+	volatile uint32_t delay;
 	// Perform a reset via the SPI/PSP interface
 	do {
 		// Set and clear a few bits that clears themselves upon reset.
@@ -112,7 +131,8 @@ void enc424j600SendSystemReset(void)
 		while( (enc424j600ReadReg(ESTAT) & (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY)) != (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY) );
 
 		//_delay_us(300);
-		volatile uint32_t delay = ( 0.0003f * 180000000.0f );
+		delay = ( 0.0003f * 180000000.0f );
+		delay *= 50;
 		while( delay-- );
 
 		// Check to see if the reset operation was successful by
@@ -123,39 +143,49 @@ void enc424j600SendSystemReset(void)
 
 	// Really ensure reset is done and give some time for power to be stable
 	//_delay_ms(1);
-	volatile uint32_t delay = ( 0.001f * 180000000.0f );
-	while( delay-- );
+	delay = ( 0.001f * 180000000.0f );
+	delay *= 50;
+	while(delay--);
+		//xSemaphoreGive( myBinarySemSpiHandle );
+	}
 }
 
-void enc424j600EventHandler(void)
+uint16_t enc424j600EventHandler(void)
 {
 	uint16_t eirVal;
-
-	eirVal = enc424j600ReadReg( EIRL );
-
-	if( eirVal )
+	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
 	{
-		if( ( eirVal & EIR_RXABTIF ) || ( eirVal & EIR_PCFULIF ) ) { // buffer overflow
-			//printf_P( PSTR("enc424j600EventHandler(): enc424j600ResetReceiver()\n") );
-			enc424j600ResetReceiver();
+		eirVal = enc424j600ReadReg( EIRL );
+		if( eirVal )
+		{
+			if( ( eirVal & EIR_RXABTIF ) || ( eirVal & EIR_PCFULIF ) ) { // buffer overflow
+				//printf_P( PSTR("enc424j600EventHandler(): enc424j600ResetReceiver()\n") );
+				enc424j600ResetReceiver();
+			}
+			enc424j600BFCReg( EIRL, eirVal );
 		}
-
-		enc424j600BFCReg( EIRL, eirVal );
+		xSemaphoreGive( myBinarySemSpiHandle );
 	}
+	return eirVal;
 }
 
 void enc424j600ResetReceiver(void)
 {
-	enc424j600BFSReg( ECON2, ECON2_RXRST );
-	enc424j600BFCReg( ECON2, ECON2_RXRST );
-	enc424j600BFCReg( ECON1, ECON1_RXEN );
+	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	{
+		enc424j600BFSReg( ECON2, ECON2_RXRST );
+		enc424j600BFCReg( ECON2, ECON2_RXRST );
+		enc424j600BFCReg( ECON1, ECON1_RXEN );
 
-	nextPacketPointer = RXSTART;
+		nextPacketPointer = RXSTART;
 
-	enc424j600WriteReg( ERXST, RXSTART );
-	enc424j600WriteReg(ERXTAIL, RAMSIZE - 2);
+		enc424j600WriteReg( ERXST, RXSTART );
+		enc424j600WriteReg(ERXTAIL, RAMSIZE - 2);
 
-	enc424j600BFSReg( ECON1, ECON1_RXEN );
+		enc424j600BFSReg( ECON1, ECON1_RXEN );
+
+		xSemaphoreGive( myBinarySemSpiHandle );
+	}
 }
 
 /**
@@ -164,7 +194,13 @@ void enc424j600ResetReceiver(void)
  */
 char enc424j600MACIsLinked(void)
 {
-	return ( 0 != ( ESTAT_PHYLNK & enc424j600ReadReg( ESTAT ) ) );
+	uint8_t ret = 0;
+	//if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	{
+		ret = ( 0 != ( ESTAT_PHYLNK & enc424j600ReadReg( ESTAT ) ) );
+	//	xSemaphoreGive( myBinarySemSpiHandle );
+	}
+	return ret;
 }
 
 /**
@@ -178,8 +214,6 @@ char enc424j600MACIsTxReady(void)
 
 char enc424j600PacketSend( uint8_t* packet, uint16_t len )
 {
-	//spi_high_frequency();
-
 	if( ECON1_TXRTS & enc424j600ReadReg( ECON1L ) )
 	{
 		return 0;
@@ -190,17 +224,22 @@ char enc424j600PacketSend( uint8_t* packet, uint16_t len )
 	enc424j600WriteReg( ETXLEN, len );
 	enc424j600MACFlush();
 
-	return 1;
+	return 0;
 }
 
 uint16_t enc424j600PacketReceive( uint8_t* packet, uint16_t len )
 {
 	RXSTATUS statusVector;
-	uint16_t newRXTail;
+	uint16_t newRXTail, estatVal, eirVal;
 
-	//spi_high_frequency();
+	/*estatVal = enc424j600ReadReg(ESTAT);
+	if( ESTAT_RXBUSY & estatVal )
+	{
+		return 0;
+	}*/
 
-	if( !( EIR_PKTIF & enc424j600ReadReg( EIR ) ) )
+	eirVal = enc424j600ReadReg(EIR);
+	if( !(eirVal & EIR_PKTIF) )
 	{
 		return 0;
 	}
@@ -225,7 +264,7 @@ uint16_t enc424j600PacketReceive( uint8_t* packet, uint16_t len )
 	return len;
 }
 
-void enc424j600MACFlush(void)
+static void enc424j600MACFlush(void)
 {
 	uint16_t w;
 
@@ -272,7 +311,7 @@ void enc424j600MACFlush(void)
  * READERS AND WRITERS
  * ******************************************************************/
 
-void enc424j600WriteMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
+static void enc424j600WriteMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
 {
 	uint8_t op = RBMUDA;
 
@@ -284,7 +323,7 @@ void enc424j600WriteMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
 	enc424j600WriteN(op, data, length);
 }
 
-void enc424j600ReadMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
+static void enc424j600ReadMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
 {
 	if (length == 0u)
 		return;
@@ -304,15 +343,17 @@ void enc424j600ReadMemoryWindow(uint8_t window, uint8_t *data, uint16_t length)
  * @variable <uint16_t> address - register address
  * @return <uint16_t> data - data in register
  */
-static uint16_t enc424j600ReadReg(uint16_t address)
+//static
+uint16_t enc424j600ReadReg(uint16_t address)
 {
-	uint16_t returnValue;
+	uint16_t returnValue = 0;
 	uint8_t bank;
-
 	// See if we need to change register banks
 	bank = ((uint8_t) address) & 0xE0;
-	if (bank <= (0x3u << 5)) {
-		if (bank != currentBank) {
+	if (bank <= (0x3u << 5))
+	{
+		//if (bank != currentBank)
+		{
 			if (bank == (0x0u << 5))
 				enc424j600ExecuteOp0(B0SEL);
 			else if (bank == (0x1u << 5))
@@ -342,11 +383,12 @@ static uint16_t enc424j600ReadReg(uint16_t address)
 static void enc424j600WriteReg(uint16_t address, uint16_t data)
 {
 	uint8_t bank;
-
 	// See if we need to change register banks
 	bank = ((uint8_t) address) & 0xE0;
-	if (bank <= (0x3u << 5)) {
-		if (bank != currentBank) {
+	if (bank <= (0x3u << 5))
+	{
+		//if (bank != currentBank)
+		{
 			if (bank == (0x0u << 5))
 				enc424j600ExecuteOp0(B0SEL);
 			else if (bank == (0x1u << 5))
@@ -360,44 +402,36 @@ static void enc424j600WriteReg(uint16_t address, uint16_t data)
 		}
 		enc424j600ExecuteOp16(WCR | (address & 0x1F), data);
 	} else {
-		uint32_t data32;
+		uint32_t data32 = 0;
 		((uint8_t*) & data32)[0] = (uint8_t) address;
 		((uint8_t*) & data32)[1] = ((uint8_t*) & data)[0];
 		((uint8_t*) & data32)[2] = ((uint8_t*) & data)[1];
 		enc424j600ExecuteOp32(WCRU, data32);
 	}
-
 }
 
-uint16_t enc424j600ReadPHYReg(uint8_t address)
+static uint16_t enc424j600ReadPHYReg(uint8_t address)
 {
-	uint16_t returnValue;
-
+	uint16_t returnValue = 0;
 	// Set the right address and start the register read operation
 	enc424j600WriteReg(MIREGADR, 0x0100 | address);
 	enc424j600WriteReg(MICMD, MICMD_MIIRD);
-
 	// Loop to wait until the PHY register has been read through the MII
 	// This requires 25.6us
 	while (enc424j600ReadReg(MISTAT) & MISTAT_BUSY);
-
 	// Stop reading
 	enc424j600WriteReg(MICMD, 0x0000);
-
 	// Obtain results and return
 	returnValue = enc424j600ReadReg(MIRD);
-
 	return returnValue;
 }
 
-void enc424j600WritePHYReg(uint8_t address, uint16_t Data)
+static void enc424j600WritePHYReg(uint8_t address, uint16_t Data)
 {
 	// Write the register address
 	enc424j600WriteReg(MIREGADR, 0x0100 | address);
-
 	// Write the data
 	enc424j600WriteReg(MIWR, Data);
-
 	// Wait until the PHY register has been written
 	while( enc424j600ReadReg(MISTAT) & MISTAT_BUSY );
 }
@@ -405,30 +439,26 @@ void enc424j600WritePHYReg(uint8_t address, uint16_t Data)
 static void enc424j600ReadN(uint8_t op, uint8_t* data, uint16_t dataLen)
 {
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-	HAL_SPI_Receive( &hspi2, data, dataLen, 100 );
-
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
+	HAL_SPI_Receive( &hspi2, data, dataLen, 1000 );
 	unselect_net_chip();
 }
 
 static void enc424j600WriteN(uint8_t op, uint8_t* data, uint16_t dataLen)
 {
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-	HAL_SPI_Transmit( &hspi2, data, dataLen, 100 );
-	
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
+	HAL_SPI_Transmit( &hspi2, data, dataLen, 1000 );
 	unselect_net_chip();
 }
 
 static void enc424j600BFSReg(uint16_t address, uint16_t bitMask)
 {
 	uint8_t bank;
-
 	// See if we need to change register banks
 	bank = ((int8_t) address) & 0xE0;
-	if (bank != currentBank) {
+	//if (bank != currentBank)
+	{
 		if (bank == (0x0u << 5))
 			enc424j600ExecuteOp0(B0SEL);
 		else if (bank == (0x1u << 5))
@@ -440,17 +470,17 @@ static void enc424j600BFSReg(uint16_t address, uint16_t bitMask)
 
 		currentBank = bank;
 	}
-
 	enc424j600ExecuteOp16(BFS | (address & 0x1F), bitMask);
 }
 
-static void enc424j600BFCReg(uint16_t address, uint16_t bitMask)
+void enc424j600BFCReg(uint16_t address, uint16_t bitMask)
 {
 	uint8_t bank;
 
 	// See if we need to change register banks
 	bank = ((uint8_t) address) & 0xE0;
-	if (bank != currentBank) {
+	//if (bank != currentBank)
+	{
 		if (bank == (0x0u << 5))
 			enc424j600ExecuteOp0(B0SEL);
 		else if (bank == (0x1u << 5))
@@ -476,9 +506,7 @@ static void enc424j600BFCReg(uint16_t address, uint16_t bitMask)
 static void enc424j600ExecuteOp0( uint8_t op )
 {
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
 	unselect_net_chip();
 }
 
@@ -487,17 +515,18 @@ static void enc424j600ExecuteOp0( uint8_t op )
  * @variable <uint8_t> op - SPI operation
  * @variable <uint8_t> data - data
  */
-uint8_t enc424j600ExecuteOp8( uint8_t op, uint8_t data )
+static uint8_t enc424j600ExecuteOp8( uint8_t op, uint8_t data )
 {
-	uint8_t returnValue;
+	uint8_t returnValue = 0;
+	uint8_t buffer[2];
+
+	buffer[0] = data;
+	buffer[1] = data>>8;
 
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 1, 100 );
-
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
+	HAL_SPI_TransmitReceive( &hspi2, buffer, ((uint8_t*)&returnValue), 1, 1000 );
 	unselect_net_chip();
-
 	return returnValue;
 }
 
@@ -506,17 +535,18 @@ uint8_t enc424j600ExecuteOp8( uint8_t op, uint8_t data )
  * @variable <uint8_t> op - SPI operation
  * @variable <uint16_t> data - data
  */
-uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
+static uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
 {
-	uint16_t returnValue;
+	uint16_t returnValue = 0;
+	uint8_t buffer[2];
+
+	buffer[0] = data;
+	buffer[1] = data>>8;
 
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 2, 100 );
-
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
+	HAL_SPI_TransmitReceive( &hspi2, buffer, ((uint8_t*)&returnValue), 2, 1000 );
 	unselect_net_chip();
-
 	return returnValue;
 }
 
@@ -525,16 +555,19 @@ uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
  * @variable <uint8_t> op - SPI operation
  * @variable <uint32_t> data - data
  */
-uint32_t enc424j600ExecuteOp32( uint8_t op, uint32_t data )
+static uint32_t enc424j600ExecuteOp32( uint8_t op, uint32_t data )
 {
-	uint32_t returnValue;
+	uint32_t returnValue = 0;
+	uint8_t buffer[4];
+
+	buffer[0] = data;
+	buffer[1] = data>>8;
+	buffer[2] = data>>16;
+	buffer[3] = data>>24;
 
 	select_net_chip();
-
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 10 );
-	HAL_SPI_TransmitReceive( &hspi2, ((uint8_t*)&data), ((uint8_t*)&returnValue), 4, 100 );
-
+	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
+	HAL_SPI_TransmitReceive( &hspi2, buffer, ((uint8_t*)&returnValue), 3, 100 );
 	unselect_net_chip();
-
 	return returnValue;
 }

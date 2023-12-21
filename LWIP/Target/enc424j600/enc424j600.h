@@ -800,19 +800,26 @@ typedef union __attribute__((aligned(2), packed)) {
 #define select_net_chip() \
 {\
 	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_SET );\
+	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_SET );\
+	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_SET );\
+	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
 	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
 }
 
 #define unselect_net_chip()\
 {\
 	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS0_GPIO_Port, CS0_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
+	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
 	HAL_GPIO_WritePin( CS1_GPIO_Port, CS1_Pin, GPIO_PIN_RESET );\
 }
 
-void enc424j600EventHandler(void);
+uint16_t enc424j600EventHandler(void);
 void enc424j600ResetReceiver(void);
 
-void enc424j600MACFlush(void);
 char enc424j600MACIsLinked(void);
 
 void enc424j600SendSystemReset(void);
@@ -821,14 +828,6 @@ void enc424j600Init(uint8_t *mac_addr);
 char enc424j600PacketSend(uint8_t* packet, uint16_t len);
 uint16_t enc424j600PacketReceive(uint8_t* packet, uint16_t maxlen);
 
-uint16_t enc424j600ReadPHYReg(uint8_t address);
-void enc424j600WritePHYReg(uint8_t address, uint16_t Data);
-
-uint8_t enc424j600ExecuteOp8(uint8_t op, uint8_t data);
-uint16_t enc424j600ExecuteOp16(uint8_t op, uint16_t data);
-uint32_t enc424j600ExecuteOp32(uint8_t op, uint32_t data);
-
-void enc424j600ReadMemoryWindow(uint8_t window, uint8_t *data, uint16_t length);
-void enc424j600WriteMemoryWindow(uint8_t window, uint8_t *data, uint16_t length);
+uint16_t enc424j600ReadReg(uint16_t address);;
 
 #endif
