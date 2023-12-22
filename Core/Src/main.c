@@ -26,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include "lwip.h"
 #include "semphr.h"
+#include "api.h"
 /* ----------------------- Modbus includes ----------------------------------*/
 #include "mb.h"
 #include "mbport.h"
@@ -38,6 +39,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// MB_FUNC_READ_DISCRETE_INPUTS					( 2 )
+#define REG_DISC_START							1
+#define REG_DISC_SIZE							32
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,6 +51,8 @@
 
 /* Private variables ---------------------------------------------------------*/
  SPI_HandleTypeDef hspi2;
+
+unsigned char ucRegDiscBuf[REG_DISC_SIZE / 8];
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -61,6 +67,12 @@ const osSemaphoreAttr_t myBinarySemSpi_attributes = {
   .name = "myBinarySemSpi"
 };
 /* USER CODE BEGIN PV */
+osThreadId_t ModBusTCPSlaveTaskHandle;
+const osThreadAttr_t ModBusTCPSlaveTask_attributes = {
+  .name = "ModBusTCPSlaveTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -123,6 +135,7 @@ int main(void)
   eStatus = eMBTCPInit(502);
   eStatus = eMBSetSlaveID( 0x34, TRUE, ucSlaveID, 3 );
   eStatus = eMBEnable();
+  eStatus = eStatus;
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -349,12 +362,89 @@ eMBRegCoilsCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils,
     return MB_ENOREG;
 }
 
-eMBErrorCode
-eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
+eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete)
 {
-    return MB_ENOREG;
+	volatile eMBErrorCode eStatus = MB_ENOERR;
+	volatile short iNDiscrete = ( short )usNDiscrete;
+	volatile unsigned short usBitOffset;
+
+	// MB_FUNC_READ_DISCRETE_INPUTS          ( 2 )
+	/* Check if we have registers mapped at this block. */
+	if( (usAddress >= REG_DISC_START) &&
+		(usAddress + usNDiscrete <= REG_DISC_START + REG_DISC_SIZE)
+	) {
+//		uiModbusTimeOutCounter = 0;
+		usBitOffset = ( unsigned short )( usAddress - REG_DISC_START );
+		while(iNDiscrete > 0) {
+			*pucRegBuffer++ =
+			xMBUtilGetBits( ucRegDiscBuf, usBitOffset,
+                            (unsigned char)(iNDiscrete>8? 8:iNDiscrete)
+			);
+			iNDiscrete -= 8;
+			usBitOffset += 8;
+		}
+		return MB_ENOERR;
+	}
+
+	return eStatus;
 }
 
+uint8_t mb_rx_msg[600], mb_tx_msg[600];
+USHORT TCPLengthRX, TCPLengthTX;
+
+void ModBusTCPSlaveTask(void *argument)
+{
+	static struct netconn *conn, *newconn;
+	static struct netbuf *buf;
+	static ip_addr_t *addr;
+	static unsigned short port;
+
+	err_t err, accept_err;
+	eMBEventType eEvent;
+
+	conn = netconn_new(NETCONN_TCP);
+	if (conn!=NULL)
+	{
+		err = netconn_bind(conn, IP_ADDR_ANY, 502);
+		if (err == ERR_OK)
+		{
+			netconn_listen(conn);
+			while (1)
+			{
+				accept_err = netconn_accept(conn, &newconn);
+				if (accept_err == ERR_OK)
+				{
+					while (netconn_recv(newconn, &buf) == ERR_OK)
+					{
+						addr = netbuf_fromaddr(buf);  // get the address of the client
+						port = netbuf_fromport(buf);  // get the Port of the client
+						do
+						{
+							netbuf_copy(buf, mb_rx_msg, buf->p->tot_len);
+							TCPLengthRX = buf->p->tot_len;
+
+							eEvent = EV_FRAME_RECEIVED;
+							xMBPortEventPost(EV_FRAME_RECEIVED);
+							xMBPortEventGetTX(&eEvent);
+							if(EV_FRAME_SENT == eEvent)
+							{
+								netconn_write(newconn, mb_tx_msg, TCPLengthTX, NETCONN_COPY);
+							}
+							xMBPortEventPost(EV_READY);
+						} while (netbuf_next(buf) >0);
+						netbuf_delete(buf);
+					}
+					netconn_close(newconn);
+					netconn_delete(newconn);
+				}
+			}
+		}
+		else
+		{
+			netconn_delete(conn);
+		}
+	}
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -368,8 +458,9 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   MX_LWIP_Init();
-  /* Infinite loop */
-  /* Infinite loop */
+
+  osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+
   for(;;)
   {
 

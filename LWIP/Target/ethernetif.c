@@ -243,7 +243,7 @@ static void low_level_init(struct netif *netif)
  *       dropped because of memory failure (except for the TCP timers).
  */
 
-static err_t low_level_output_(struct netif *netif, struct pbuf *p)
+static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
 	uint16_t framelength = 0;
 	struct pbuf *q;
@@ -268,7 +268,7 @@ static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 	return errval;
 }
 
-static err_t low_level_output(struct netif *netif, struct pbuf *p)
+static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 {
 	err_t errval = ERR_OK;
 	struct pbuf *q;
