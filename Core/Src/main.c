@@ -46,7 +46,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-SPI_HandleTypeDef hspi2;
+ SPI_HandleTypeDef hspi2;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -188,6 +188,7 @@ void SystemClock_Config(void)
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
@@ -204,12 +205,14 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
   /** Activate the Over-Drive mode
   */
   if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -248,7 +251,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -427,5 +430,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
