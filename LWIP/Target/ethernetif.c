@@ -483,6 +483,11 @@ void ethernetif_set_link(void* argument)
 		{	/* network cable is connected */
 			netif_set_up(link_arg->netif);
 			netif_set_link_up(link_arg->netif);
+
+//#ifdef USE_DHCP
+			extern struct netif gnetif;
+  dhcp_start(&gnetif);
+//#endif
 		}
 		else if(netif_is_link_up(link_arg->netif) && !regvalue)
 		{	/* network cable is dis-connected */

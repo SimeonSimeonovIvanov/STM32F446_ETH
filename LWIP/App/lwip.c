@@ -70,7 +70,7 @@ osThreadAttr_t attributes;
 #define GW_ADDR3   0
 /* USER CODE END 2 */
 
-
+#define USE_DHCP
 
 /**
   * LwIP initialization function
@@ -128,8 +128,9 @@ void MX_LWIP_Init(void)
 /* USER CODE END 3 */
   UNLOCK_TCPIP_CORE();
   /* Start DHCP negotiation for a network interface (IPv4) */
-  //dhcp_start(&gnetif);
-
+#ifdef USE_DHCP
+  dhcp_start(&gnetif);
+#endif
 /* USER CODE BEGIN 4_3 */
 /* USER CODE END 4_3 */
 /* USER CODE END 3 */

@@ -26,6 +26,9 @@
 /* USER CODE BEGIN Includes */
 #include "lwip.h"
 #include "semphr.h"
+/* ----------------------- Modbus includes ----------------------------------*/
+#include "mb.h"
+#include "mbport.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -67,7 +70,15 @@ static void MX_SPI2_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
+/* ----------------------- Defines ------------------------------------------*/
+#define REG_INPUT_START 1000
+#define REG_INPUT_NREGS 4
 
+/* ----------------------- Static variables ---------------------------------*/
+static USHORT   usRegInputStart = REG_INPUT_START;
+static USHORT   usRegInputBuf[REG_INPUT_NREGS];
+
+/* ----------------------- Start implementation -----------------------------*/
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -106,7 +117,12 @@ int main(void)
   MX_SPI2_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-
+  const uint8_t ucSlaveID[] = { 0xAA, 0xBB, 0xCC };
+  eMBErrorCode eStatus;
+  //eStatus = eMBInit( MB_TCP, 0x0A, 0, 38400, MB_PAR_EVEN );
+  eStatus = eMBTCPInit(502);
+  eStatus = eMBSetSlaveID( 0x34, TRUE, ucSlaveID, 3 );
+  eStatus = eMBEnable();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -232,7 +248,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -286,6 +302,56 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 #include "../../lwip/Target/enc424j600/enc424j600.h"
 extern osSemaphoreId s_xSemaphore;
+
+eMBErrorCode
+eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
+{
+    eMBErrorCode    eStatus = MB_ENOERR;
+    int             iRegIndex;
+
+    if( ( usAddress >= REG_INPUT_START )
+        && ( usAddress + usNRegs <= REG_INPUT_START + REG_INPUT_NREGS ) )
+    {
+        iRegIndex = ( int )( usAddress - usRegInputStart );
+        while( usNRegs > 0 )
+        {
+            *pucRegBuffer++ =
+                ( unsigned char )( usRegInputBuf[iRegIndex] >> 8 );
+            *pucRegBuffer++ =
+                ( unsigned char )( usRegInputBuf[iRegIndex] & 0xFF );
+            iRegIndex++;
+            usNRegs--;
+        }
+    }
+    else
+    {
+        eStatus = MB_ENOREG;
+    }
+
+    return eStatus;
+}
+
+eMBErrorCode
+eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs,
+                 eMBRegisterMode eMode )
+{
+    return MB_ENOREG;
+}
+
+
+eMBErrorCode
+eMBRegCoilsCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils,
+               eMBRegisterMode eMode )
+{
+    return MB_ENOREG;
+}
+
+eMBErrorCode
+eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
+{
+    return MB_ENOREG;
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -319,6 +385,12 @@ void StartDefaultTask(void *argument)
 		}
 		xSemaphoreGive( myBinarySemSpiHandle );
 	}
+
+    ( void )eMBPoll(  );
+
+    /* Here we simply count the number of poll cycles. */
+    usRegInputBuf[0]++;
+
 	osDelay(1);
   }
   /* USER CODE END 5 */
