@@ -211,7 +211,7 @@ char enc424j600MACIsTxReady(void)
 {
 	return !( ECON1_TXRTS & enc424j600ReadReg(ECON1) );
 }
-
+///////////////////////////////////////////////////////////////////////////////
 char enc424j600PacketSend( uint8_t* packet, uint16_t len )
 {
 	if( ECON1_TXRTS & enc424j600ReadReg( ECON1L ) )
@@ -227,10 +227,35 @@ char enc424j600PacketSend( uint8_t* packet, uint16_t len )
 	return 0;
 }
 
+char enc424j600PacketBegin(void)
+{
+	if( ECON1_TXRTS & enc424j600ReadReg( ECON1L ) )
+	{
+		return 1;
+	}
+
+	enc424j600WriteReg( EGPWRPT, TXSTART );
+
+	return 0;
+}
+
+char enc424j600PacketSendPart( uint8_t* packet, uint16_t len )
+{
+	enc424j600WriteMemoryWindow( GP_WINDOW, packet, len );
+	return 0;
+}
+
+char enc424j600PacketEnd( uint16_t len )
+{
+	enc424j600WriteReg( ETXLEN, len );
+	enc424j600MACFlush();
+	return 0;
+}
+///////////////////////////////////////////////////////////////////////////////
 uint16_t enc424j600PacketReceive( uint8_t* packet, uint16_t len )
 {
 	RXSTATUS statusVector;
-	uint16_t newRXTail, estatVal, eirVal;
+	uint16_t newRXTail, eirVal;
 
 	/*estatVal = enc424j600ReadReg(ESTAT);
 	if( ESTAT_RXBUSY & estatVal )
@@ -264,6 +289,50 @@ uint16_t enc424j600PacketReceive( uint8_t* packet, uint16_t len )
 	return len;
 }
 
+uint16_t enc424j600PacketReceiveBegin(void)
+{
+	RXSTATUS statusVector;
+	uint16_t eirVal;
+
+	eirVal = enc424j600ReadReg(EIR);
+	if( !(eirVal & EIR_PKTIF) )
+	{
+		return 0;
+	}
+
+	enc424j600WriteReg( ERXRDPT, nextPacketPointer );
+	enc424j600ReadMemoryWindow( RX_WINDOW, (uint8_t*) & nextPacketPointer, sizeof (nextPacketPointer) );
+	enc424j600ReadMemoryWindow( RX_WINDOW, (uint8_t*) & statusVector, sizeof (statusVector) );
+
+	return statusVector.bits.ByteCount > 4 ? statusVector.bits.ByteCount - 4 : 0;
+}
+
+uint16_t enc424j600PacketReceivePart( uint8_t* packet, uint16_t len )
+{
+	enc424j600WriteReg( ERXRDPT, nextPacketPointer );
+	enc424j600ReadMemoryWindow( RX_WINDOW, (uint8_t*) & nextPacketPointer, sizeof (nextPacketPointer) );
+
+	enc424j600ReadMemoryWindow( RX_WINDOW, packet, len );
+	return 0;
+}
+
+uint16_t enc424j600PacketReceiveEnd( uint16_t len )
+{
+	uint16_t newRXTail;
+
+	newRXTail = nextPacketPointer - 2;
+
+	if( RXSTART == nextPacketPointer )
+	{
+		newRXTail = RAMSIZE - 2;
+	}
+
+	enc424j600BFSReg( ECON1, ECON1_PKTDEC );
+	enc424j600WriteReg( ERXTAIL, newRXTail );
+
+	return len;
+}
+///////////////////////////////////////////////////////////////////////////////
 static void enc424j600MACFlush(void)
 {
 	uint16_t w;

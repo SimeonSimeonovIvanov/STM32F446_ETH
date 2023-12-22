@@ -828,6 +828,14 @@ void enc424j600Init(uint8_t *mac_addr);
 char enc424j600PacketSend(uint8_t* packet, uint16_t len);
 uint16_t enc424j600PacketReceive(uint8_t* packet, uint16_t maxlen);
 
-uint16_t enc424j600ReadReg(uint16_t address);;
+char enc424j600PacketBegin(void);
+char enc424j600PacketSendPart( uint8_t* packet, uint16_t len );
+char enc424j600PacketEnd( uint16_t len );
+
+uint16_t enc424j600PacketReceiveBegin( void );
+uint16_t enc424j600PacketReceivePart( uint8_t* packet, uint16_t len );
+uint16_t enc424j600PacketReceiveEnd( uint16_t len );
+
+uint16_t enc424j600ReadReg(uint16_t address);
 
 #endif

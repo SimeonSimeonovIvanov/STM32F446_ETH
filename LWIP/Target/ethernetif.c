@@ -70,12 +70,12 @@ extern osSemaphoreId_t myBinarySemSpiHandle;
 #if defined ( __ICCARM__ ) /*!< IAR Compiler */
   #pragma data_alignment=4
 #endif
-__ALIGN_BEGIN uint8_t Rx_Buff[ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive Buffer */
+__ALIGN_BEGIN uint8_t Rx_Buff[2*ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive Buffer */
 
 #if defined ( __ICCARM__ ) /*!< IAR Compiler */
   #pragma data_alignment=4
 #endif
-__ALIGN_BEGIN uint8_t Tx_Buff[ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
+__ALIGN_BEGIN uint8_t Tx_Buff[2*ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
 
 /* USER CODE BEGIN 2 */
 
@@ -243,30 +243,52 @@ static void low_level_init(struct netif *netif)
  *       dropped because of memory failure (except for the TCP timers).
  */
 
-static err_t low_level_output(struct netif *netif, struct pbuf *p)
+static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 {
 	uint16_t framelength = 0;
 	struct pbuf *q;
 	err_t errval;
+
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
 #if ETH_PAD_SIZE
-  pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
+	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
 #endif
-	/* copy frame from pbufs to driver buffers */
 	for(q = p; q != NULL; q = q->next )
-	{
+	{	/* copy frame from pbufs to driver buffers */
 		memcpy( &Tx_Buff[framelength], q->payload, q->len );
 		framelength += q->len;
 	}
-
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-	{
-	errval = enc424j600PacketSend( Tx_Buff, framelength ) ? !ERR_OK:ERR_OK;
-	xSemaphoreGive( myBinarySemSpiHandle );
-	}
+	errval = enc424j600PacketSend( Tx_Buff, p->tot_len/*framelength*/ ) ? !ERR_OK:ERR_OK;
 #if ETH_PAD_SIZE
-  pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
 #endif
 	LINK_STATS_INC(link.xmit);
+	xSemaphoreGive( myBinarySemSpiHandle );
+
+	return errval;
+}
+
+static err_t low_level_output(struct netif *netif, struct pbuf *p)
+{
+	err_t errval = ERR_OK;
+	struct pbuf *q;
+
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+#if ETH_PAD_SIZE
+	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
+#endif
+	enc424j600PacketBegin();
+	for(q = p; q != NULL; q = q->next )
+	{	/* copy frame from pbufs to driver buffers */
+		enc424j600PacketSendPart( q->payload, q->len );
+	}
+	enc424j600PacketEnd( p->tot_len );
+#if ETH_PAD_SIZE
+	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+#endif
+	LINK_STATS_INC(link.xmit);
+
+	xSemaphoreGive( myBinarySemSpiHandle );
 	return errval;
 }
 
@@ -284,19 +306,16 @@ static struct pbuf * low_level_input(struct netif *netif)
 	struct pbuf *q = NULL;
 	uint16_t len = 0;
 
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	len = enc424j600PacketReceive( Rx_Buff, 2*ETH_RX_BUF_SIZE );
+	if( len<4 )
 	{
-		len = enc424j600PacketReceive( Rx_Buff, ETH_RX_BUF_SIZE );
 		xSemaphoreGive( myBinarySemSpiHandle );
-		if( len<4 )
-		{
-			return NULL;
-		}
+		return NULL;
 	}
 #if ETH_PAD_SIZE
 	len += ETH_PAD_SIZE; /* allow room for Ethernet padding */
 #endif
-	//len -= 4;
 	p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
 	if( p != NULL )
 	{
@@ -319,6 +338,49 @@ static struct pbuf * low_level_input(struct netif *netif)
 		LINK_STATS_INC(link.drop);
 	}
 
+	xSemaphoreGive( myBinarySemSpiHandle );
+	return p;
+}
+
+static struct pbuf * low_level_input_(struct netif *netif)
+{
+	struct pbuf *p = NULL;
+	struct pbuf *q = NULL;
+	uint16_t len = 0;
+
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+
+	len = enc424j600PacketReceiveBegin();
+	if( len<4 )
+	{
+		xSemaphoreGive( myBinarySemSpiHandle );
+		return NULL;
+	}
+#if ETH_PAD_SIZE
+	len += ETH_PAD_SIZE; /* allow room for Ethernet padding */
+#endif
+	p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+	if( p != NULL )
+	{
+#if ETH_PAD_SIZE
+		pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
+#endif
+		for(q = p; q != NULL; q = q->next)
+		{
+			enc424j600PacketReceivePart(q->payload, q->len);
+		}
+		enc424j600PacketReceiveEnd(p->tot_len);
+#if ETH_PAD_SIZE
+		pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+#endif
+		LINK_STATS_INC(link.recv);
+	} else {
+		/* drop packet(); */
+		LINK_STATS_INC(link.memerr);
+		LINK_STATS_INC(link.drop);
+	}
+
+	xSemaphoreGive( myBinarySemSpiHandle );
 	return p;
 }
 
