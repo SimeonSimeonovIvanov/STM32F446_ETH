@@ -225,6 +225,8 @@ static void low_level_init(struct netif *netif)
 
   netif_set_up(netif);
   netif_set_link_up(netif);
+
+  httpd_init();
 }
 
 /**
