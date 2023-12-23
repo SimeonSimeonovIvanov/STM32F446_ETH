@@ -136,11 +136,11 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Target/enc424j600/encX24J600_spi.h|Target/enc424j600/encX24j600_spi.c|Target/enc424j600/encX24J600_types.h|Target/enc424j600/tcpip_types.h|Target/enc424j600/encX24J600_driver.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="LWIP"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="FATFS"/>
-						<entry excluding="Third_Party/freemodbus/doc|Third_Party/freemodbus/tools|Third_Party/freemodbus/demo" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="FATFS"/>
+						<entry excluding="Target/enc424j600/encX24J600_spi.h|Target/enc424j600/encX24j600_spi.c|Target/enc424j600/encX24J600_types.h|Target/enc424j600/tcpip_types.h|Target/enc424j600/encX24J600_driver.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="LWIP"/>
+						<entry excluding="Third_Party/LwIP/src/apps/http/fsdata.c|Third_Party/LwIP/src/apps/http/fs|Third_Party/LwIP/src/apps/http/makefsdata|Third_Party/freemodbus/doc|Third_Party/freemodbus/tools|Third_Party/freemodbus/demo" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
