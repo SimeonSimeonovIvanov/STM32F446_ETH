@@ -30,6 +30,7 @@
 /* ----------------------- Modbus includes ----------------------------------*/
 #include "mb.h"
 #include "mbport.h"
+#include "mbutils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -264,7 +265,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -411,9 +412,7 @@ void ModBusTCPSlaveTask(void *argument)
 				accept_err = netconn_accept(conn, &newconn);
 				if (accept_err == ERR_OK)
 				{
-//					netconn_set_recvtimeout(conn, 5000);
 					netconn_set_recvtimeout(newconn, 5000);
-//					netconn_set_sendtimeout(newconn, 5000);
 					while (netconn_recv(newconn, &buf) == ERR_OK)
 					{
 						do
@@ -422,13 +421,13 @@ void ModBusTCPSlaveTask(void *argument)
 							TCPLengthRX = buf->p->tot_len;
 
 							eEvent = EV_FRAME_RECEIVED;
-							xMBPortEventPost(EV_FRAME_RECEIVED);
+							xMBPortEventPostRX(EV_FRAME_RECEIVED);
 							xMBPortEventGetTX(&eEvent);
 							if(EV_FRAME_SENT == eEvent)
 							{
 								netconn_write(newconn, mb_tx_msg, TCPLengthTX, NETCONN_COPY);
 							}
-							xMBPortEventPost(EV_READY);
+							xMBPortEventPostRX(EV_READY);
 						} while (netbuf_next(buf) >0);
 						netbuf_delete(buf);
 					}
@@ -457,36 +456,27 @@ void ModBusTCPSlaveTask(void *argument)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  MX_LWIP_Init();
-
-  osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
-
-  for(;;)
-  {
-
-	 //enc424j600EventHandler();
-	//if( EIR_PKTIF & enc424j600EventHandler() ) //enc424j600ReadReg( EIRL ) )
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	MX_LWIP_Init();
+	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+	for(;;)
 	{
-		if( EIR_PKTIF & enc424j600ReadReg( EIR ) )
+		//enc424j600EventHandler();
+		//if( EIR_PKTIF & enc424j600EventHandler() ) //enc424j600ReadReg(EIRL) )
+		xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
+		if( EIR_PKTIF & enc424j600ReadReg(EIR) )
 		{
 			enc424j600BFCReg(EIR, EIR_PKTIF);
-
 			if( NULL != s_xSemaphore )
 			{
 				osSemaphoreRelease(s_xSemaphore);
 			}
 		}
-		xSemaphoreGive( myBinarySemSpiHandle );
+		xSemaphoreGive(myBinarySemSpiHandle);
+		eMBPoll();
+		/* Here we simply count the number of poll cycles. */
+		usRegInputBuf[0]++;ucRegDiscBuf[0]++;
+		osDelay(1);
 	}
-
-    ( void )eMBPoll(  );
-
-    /* Here we simply count the number of poll cycles. */
-    usRegInputBuf[0]++;
-
-	osDelay(1);
-  }
   /* USER CODE END 5 */
 }
 
