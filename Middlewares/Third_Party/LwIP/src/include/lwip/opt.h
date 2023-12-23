@@ -1986,7 +1986,7 @@
  * SO_SNDTIMEO processing.
  */
 #if !defined LWIP_SO_SNDTIMEO || defined __DOXYGEN__
-#define LWIP_SO_SNDTIMEO                0
+#define LWIP_SO_SNDTIMEO                1
 #endif
 
 /**
@@ -1994,7 +1994,7 @@
  * SO_RCVTIMEO processing.
  */
 #if !defined LWIP_SO_RCVTIMEO || defined __DOXYGEN__
-#define LWIP_SO_RCVTIMEO                0
+#define LWIP_SO_RCVTIMEO                1
 #endif
 
 /**
@@ -2002,7 +2002,7 @@
  * (milliseconds, much like winsock does) instead of a struct timeval (default).
  */
 #if !defined LWIP_SO_SNDRCVTIMEO_NONSTANDARD || defined __DOXYGEN__
-#define LWIP_SO_SNDRCVTIMEO_NONSTANDARD 0
+#define LWIP_SO_SNDRCVTIMEO_NONSTANDARD 1
 #endif
 
 /**

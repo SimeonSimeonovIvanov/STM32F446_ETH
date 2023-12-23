@@ -396,14 +396,11 @@ void ModBusTCPSlaveTask(void *argument)
 {
 	static struct netconn *conn, *newconn;
 	static struct netbuf *buf;
-	static ip_addr_t *addr;
-	static unsigned short port;
-
 	err_t err, accept_err;
 	eMBEventType eEvent;
 
 	conn = netconn_new(NETCONN_TCP);
-	if (conn!=NULL)
+	if( conn != NULL)
 	{
 		err = netconn_bind(conn, IP_ADDR_ANY, 502);
 		if (err == ERR_OK)
@@ -414,10 +411,11 @@ void ModBusTCPSlaveTask(void *argument)
 				accept_err = netconn_accept(conn, &newconn);
 				if (accept_err == ERR_OK)
 				{
+//					netconn_set_recvtimeout(conn, 5000);
+					netconn_set_recvtimeout(newconn, 5000);
+//					netconn_set_sendtimeout(newconn, 5000);
 					while (netconn_recv(newconn, &buf) == ERR_OK)
 					{
-						addr = netbuf_fromaddr(buf);  // get the address of the client
-						port = netbuf_fromport(buf);  // get the Port of the client
 						do
 						{
 							netbuf_copy(buf, mb_rx_msg, buf->p->tot_len);
@@ -444,6 +442,8 @@ void ModBusTCPSlaveTask(void *argument)
 			netconn_delete(conn);
 		}
 	}
+
+	vTaskDelete (NULL);
 }
 /* USER CODE END 4 */
 
