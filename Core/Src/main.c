@@ -24,13 +24,16 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "../../lwip/Target/enc424j600/enc424j600.h"
 #include "lwip.h"
 #include "semphr.h"
 #include "api.h"
-/* ----------------------- Modbus includes ----------------------------------*/
+
 #include "mb.h"
 #include "mbport.h"
 #include "mbutils.h"
+
+#include "hmi_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,6 +46,9 @@
 // MB_FUNC_READ_DISCRETE_INPUTS					( 2 )
 #define REG_DISC_START							1
 #define REG_DISC_SIZE							32
+
+#define REG_INPUT_START							1000
+#define REG_INPUT_NREGS							4
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -52,8 +58,6 @@
 
 /* Private variables ---------------------------------------------------------*/
  SPI_HandleTypeDef hspi2;
-
-unsigned char ucRegDiscBuf[REG_DISC_SIZE / 8];
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -74,6 +78,30 @@ const osThreadAttr_t ModBusTCPSlaveTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+
+osThreadId_t ModBusSlaveTaskHandle;
+const osThreadAttr_t ModBusSlaveTask_attributes = {
+  .name = "ModBusSlaveTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+/* Definitions for myHmiTask */
+osThreadId_t myHmiTaskHandle;
+const osThreadAttr_t myHmiTask_attributes = {
+  .name = "myHmiTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+static HMI_TASK_ARG hmi_task_arg;
+
+static uint8_t arrInput[ 256 ] = { 0 };
+static uint8_t arrOutput[ 256 ] = { 0 };
+static uint8_t usRS485PortLed[ 2 ] = { 0 };
+
+static UCHAR ucRegDiscBuf[REG_DISC_SIZE / 8];
+static USHORT usRegInputBuf[REG_INPUT_NREGS];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -83,20 +111,12 @@ static void MX_SPI2_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-/* ----------------------- Defines ------------------------------------------*/
-#define REG_INPUT_START 1000
-#define REG_INPUT_NREGS 4
 
-/* ----------------------- Static variables ---------------------------------*/
-static USHORT   usRegInputStart = REG_INPUT_START;
-static USHORT   usRegInputBuf[REG_INPUT_NREGS];
-
-/* ----------------------- Start implementation -----------------------------*/
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+extern osSemaphoreId s_xSemaphore;
 /* USER CODE END 0 */
 
 /**
@@ -137,6 +157,8 @@ int main(void)
   eStatus = eMBSetSlaveID( 0x34, TRUE, ucSlaveID, 3 );
   eStatus = eMBEnable();
   eStatus = eStatus;
+
+  hmiInitLeds();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -167,7 +189,13 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  hmi_task_arg.lpRS485PortLed[0] = &usRS485PortLed[0];
+  hmi_task_arg.lpRS485PortLed[1] = &usRS485PortLed[1];
+  hmi_task_arg.arrInput = arrInput;
+  hmi_task_arg.arrOutput = arrOutput;
+  hmi_task_arg.arrInputLen = len_of_array( arrInput );
+  hmi_task_arg.arrOutputLen = len_of_array( arrOutput );
+  myHmiTaskHandle = osThreadNew(HmiTask, (void*) &hmi_task_arg, &myHmiTask_attributes);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -317,59 +345,12 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-#include "../../lwip/Target/enc424j600/enc424j600.h"
-extern osSemaphoreId s_xSemaphore;
-
-eMBErrorCode
-eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
-{
-    eMBErrorCode    eStatus = MB_ENOERR;
-    int             iRegIndex;
-
-    if( ( usAddress >= REG_INPUT_START )
-        && ( usAddress + usNRegs <= REG_INPUT_START + REG_INPUT_NREGS ) )
-    {
-        iRegIndex = ( int )( usAddress - usRegInputStart );
-        while( usNRegs > 0 )
-        {
-            *pucRegBuffer++ =
-                ( unsigned char )( usRegInputBuf[iRegIndex] >> 8 );
-            *pucRegBuffer++ =
-                ( unsigned char )( usRegInputBuf[iRegIndex] & 0xFF );
-            iRegIndex++;
-            usNRegs--;
-        }
-    }
-    else
-    {
-        eStatus = MB_ENOREG;
-    }
-
-    return eStatus;
-}
-
-eMBErrorCode
-eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs,
-                 eMBRegisterMode eMode )
-{
-    return MB_ENOREG;
-}
-
-
-eMBErrorCode
-eMBRegCoilsCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils,
-               eMBRegisterMode eMode )
-{
-    return MB_ENOREG;
-}
-
 eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete)
-{
+{	// MB_FUNC_READ_DISCRETE_INPUTS          ( 2 )
 	volatile eMBErrorCode eStatus = MB_ENOERR;
 	volatile short iNDiscrete = ( short )usNDiscrete;
 	volatile unsigned short usBitOffset;
 
-	// MB_FUNC_READ_DISCRETE_INPUTS          ( 2 )
 	/* Check if we have registers mapped at this block. */
 	if( (usAddress >= REG_DISC_START) &&
 		(usAddress + usNDiscrete <= REG_DISC_START + REG_DISC_SIZE)
@@ -390,6 +371,43 @@ eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 	return eStatus;
 }
 
+eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils, eMBRegisterMode eMode)
+{
+    return MB_ENOREG;
+}
+
+eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs)
+{
+    eMBErrorCode    eStatus = MB_ENOERR;
+    int             iRegIndex;
+
+    if( ( usAddress >= REG_INPUT_START )
+        && ( usAddress + usNRegs <= REG_INPUT_START + REG_INPUT_NREGS ) )
+    {
+        iRegIndex = ( int )( usAddress - REG_INPUT_START );
+        while( usNRegs > 0 )
+        {
+            *pucRegBuffer++ =
+                ( unsigned char )( usRegInputBuf[iRegIndex] >> 8 );
+            *pucRegBuffer++ =
+                ( unsigned char )( usRegInputBuf[iRegIndex] & 0xFF );
+            iRegIndex++;
+            usNRegs--;
+        }
+    }
+    else
+    {
+        eStatus = MB_ENOREG;
+    }
+
+    return eStatus;
+}
+
+eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs, eMBRegisterMode eMode)
+{
+    return MB_ENOREG;
+}
+
 uint8_t mb_rx_msg[600], mb_tx_msg[600];
 USHORT TCPLengthRX, TCPLengthTX;
 
@@ -407,7 +425,7 @@ void ModBusTCPSlaveTask(void *argument)
 		if (err == ERR_OK)
 		{
 			netconn_listen(conn);
-			while (1)
+			while(1)
 			{
 				accept_err = netconn_accept(conn, &newconn);
 				if (accept_err == ERR_OK)
@@ -421,15 +439,17 @@ void ModBusTCPSlaveTask(void *argument)
 							TCPLengthRX = buf->p->tot_len;
 
 							eEvent = EV_FRAME_RECEIVED;
-							xMBPortEventPostRX(EV_FRAME_RECEIVED);
+							xMBPortEventPostRX(eEvent);
 							xMBPortEventGetTX(&eEvent);
 							if(EV_FRAME_SENT == eEvent)
 							{
 								netconn_write(newconn, mb_tx_msg, TCPLengthTX, NETCONN_COPY);
 							}
 							xMBPortEventPostRX(EV_READY);
-						} while (netbuf_next(buf) >0);
+						} while (netbuf_next(buf) > 0);
 						netbuf_delete(buf);
+
+						usRS485PortLed[1] ^= 1;
 					}
 					netconn_close(newconn);
 					netconn_delete(newconn);
@@ -443,6 +463,22 @@ void ModBusTCPSlaveTask(void *argument)
 	}
 
 	vTaskDelete (NULL);
+}
+
+void ModBusSlaveTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+//	MX_LWIP_Init();
+//	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+//	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
+	for(;;)
+	{
+		eMBPoll();
+		ucRegDiscBuf[0]++;
+		usRegInputBuf[0]++;
+		portYIELD();
+	}
+  /* USER CODE END 5 */
 }
 /* USER CODE END 4 */
 
@@ -458,24 +494,27 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
 	MX_LWIP_Init();
 	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
 	for(;;)
 	{
 		//enc424j600EventHandler();
 		//if( EIR_PKTIF & enc424j600EventHandler() ) //enc424j600ReadReg(EIRL) )
 		xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
-		if( EIR_PKTIF & enc424j600ReadReg(EIR) )
+		/*if( EIR_PKTIF & enc424j600ReadReg(EIR) )
 		{
 			enc424j600BFCReg(EIR, EIR_PKTIF);
 			if( NULL != s_xSemaphore )
 			{
 				osSemaphoreRelease(s_xSemaphore);
 			}
+		}*/
+		if(EIR_PKTIF & enc424j600ReadReg(EIR))
+		{
+			osSemaphoreRelease(s_xSemaphore);
+			usRS485PortLed[0] ^= 1;
 		}
 		xSemaphoreGive(myBinarySemSpiHandle);
-		eMBPoll();
-		/* Here we simply count the number of poll cycles. */
-		usRegInputBuf[0]++;ucRegDiscBuf[0]++;
-		osDelay(1);
+		portYIELD();
 	}
   /* USER CODE END 5 */
 }

@@ -251,7 +251,7 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 	struct pbuf *q;
 	err_t errval;
 
-	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 #if ETH_PAD_SIZE
 	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
 #endif
@@ -265,7 +265,7 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
 #endif
 	LINK_STATS_INC(link.xmit);
-	xSemaphoreGive( myBinarySemSpiHandle );
+	xSemaphoreGive(myBinarySemSpiHandle);
 
 	return errval;
 }
@@ -275,7 +275,7 @@ static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 	err_t errval = ERR_OK;
 	struct pbuf *q;
 
-	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 #if ETH_PAD_SIZE
 	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
 #endif
@@ -289,8 +289,8 @@ static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
 #endif
 	LINK_STATS_INC(link.xmit);
+	xSemaphoreGive(myBinarySemSpiHandle);
 
-	xSemaphoreGive( myBinarySemSpiHandle );
 	return errval;
 }
 
@@ -308,11 +308,11 @@ static struct pbuf * low_level_input(struct netif *netif)
 	struct pbuf *q = NULL;
 	uint16_t len = 0;
 
-	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 	len = enc424j600PacketReceive( Rx_Buff, 2*ETH_RX_BUF_SIZE );
 	if( len<4 )
 	{
-		xSemaphoreGive( myBinarySemSpiHandle );
+		xSemaphoreGive(myBinarySemSpiHandle);
 		return NULL;
 	}
 #if ETH_PAD_SIZE
@@ -339,8 +339,8 @@ static struct pbuf * low_level_input(struct netif *netif)
 		LINK_STATS_INC(link.memerr);
 		LINK_STATS_INC(link.drop);
 	}
+	xSemaphoreGive(myBinarySemSpiHandle);
 
-	xSemaphoreGive( myBinarySemSpiHandle );
 	return p;
 }
 
@@ -350,12 +350,11 @@ static struct pbuf * low_level_input_(struct netif *netif)
 	struct pbuf *q = NULL;
 	uint16_t len = 0;
 
-	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
-
+	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 	len = enc424j600PacketReceiveBegin();
 	if( len<4 )
 	{
-		xSemaphoreGive( myBinarySemSpiHandle );
+		xSemaphoreGive(myBinarySemSpiHandle);
 		return NULL;
 	}
 #if ETH_PAD_SIZE
@@ -381,8 +380,8 @@ static struct pbuf * low_level_input_(struct netif *netif)
 		LINK_STATS_INC(link.memerr);
 		LINK_STATS_INC(link.drop);
 	}
+	xSemaphoreGive(myBinarySemSpiHandle);
 
-	xSemaphoreGive( myBinarySemSpiHandle );
 	return p;
 }
 
@@ -397,28 +396,30 @@ static struct pbuf * low_level_input_(struct netif *netif)
  */
 void ethernetif_input(void* argument)
 {
-  struct pbuf *p;
-  struct netif *netif = (struct netif *) argument;
+	struct netif *netif = (struct netif *)argument;
+	struct pbuf *p;
 
-  for( ;; )
-  {
-    if( osSemaphoreAcquire(s_xSemaphore, TIME_WAITING_FOR_INPUT) == osOK )
-    {
-      do
-      {
-        LOCK_TCPIP_CORE();
-        p = low_level_input( netif );
-        if (p != NULL)
-        {
-          if (netif->input( p, netif) != ERR_OK )
-          {
-            pbuf_free(p);
-          }
-        }
-        UNLOCK_TCPIP_CORE();
-      } while(p!=NULL);
-    }
-  }
+	for( ;; )
+	{
+		if( osSemaphoreAcquire(s_xSemaphore, TIME_WAITING_FOR_INPUT) != osOK )
+		{
+			continue;
+		}
+
+		do
+		{
+			LOCK_TCPIP_CORE();
+			p = low_level_input(netif);
+			if( NULL != p )
+			{
+				if( netif->input(p, netif) != ERR_OK )
+				{
+					pbuf_free(p);
+				}
+			}
+			UNLOCK_TCPIP_CORE();
+		} while( NULL != p );
+	}
 }
 
 #if !LWIP_ARP

@@ -40,7 +40,7 @@ static volatile uint16_t nextPacketPointer;
 static void enc424j600WriteReg(uint16_t address, uint16_t data);
 static void enc424j600ExecuteOp0(uint8_t op);
 static void enc424j600BFSReg(uint16_t address, uint16_t bitMask);
-void enc424j600BFCReg(uint16_t address, uint16_t bitMask);
+//void enc424j600BFCReg(uint16_t address, uint16_t bitMask);
 static void enc424j600WriteN(uint8_t op, uint8_t* data, uint16_t dataLen);
 static void enc424j600ReadN(uint8_t op, uint8_t* data, uint16_t dataLen);
 static uint8_t enc424j600ExecuteOp8(uint8_t op, uint8_t data);

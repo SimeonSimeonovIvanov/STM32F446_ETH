@@ -65,7 +65,7 @@ void Error_Handler(void);
 #define CS2_Pin GPIO_PIN_7
 #define CS2_GPIO_Port GPIOC
 /* USER CODE BEGIN Private defines */
-
+#define len_of_array( arr )			( sizeof( arr ) / sizeof( *arr ) )
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
