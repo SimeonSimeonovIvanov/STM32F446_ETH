@@ -1,5 +1,6 @@
 myPLC
 
+This is test project for myPLC:
 STM32F446; 14 DI; 1 ENC (2xDI); 16 DO;  4 AI; 2 AO; 1 CAN ( isolated ); 1 RS485 ( isolated ); HMI: LED and SPI expander
 
 HW: https://photos.app.goo.gl/mvdGAAyFvAadtSrAA <br>
