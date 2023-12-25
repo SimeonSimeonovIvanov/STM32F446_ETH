@@ -57,27 +57,21 @@ static void enc424j600WritePHYReg(uint8_t address, uint16_t Data);
 /********************************************************************
  * INITIALIZATION
  * ******************************************************************/
-void enc424j600Init(uint8_t *mac_addr)
+uint8_t enc424j600Init(uint8_t *mac_addr)
 {
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-	{
-	//Set default bank
-	currentBank = 0;
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	currentBank = 0; // Set default bank
 	unselect_net_chip();
-
 	// Perform a reliable reset
 	enc424j600SendSystemReset();
-
 	// Initialize RX tracking variables and other control state flags
 	nextPacketPointer = RXSTART;
-
 	// Set up TX/RX/UDA buffer addresses
 	enc424j600WriteReg(ETXST, TXSTART);
 	enc424j600WriteReg(ERXST, RXSTART);
 	enc424j600WriteReg(ERXTAIL, RAMSIZE - 2);
 	enc424j600WriteReg(EUDAST, RAMSIZE);
 	enc424j600WriteReg(EUDAND, RAMSIZE + 1);
-
 	// Get MAC adress
 	uint16_t regValue;
 	regValue = enc424j600ReadReg(MAADR1);
@@ -89,21 +83,19 @@ void enc424j600Init(uint8_t *mac_addr)
 	regValue = enc424j600ReadReg(MAADR3);
 	mac_addr[4] = ((uint8_t*) & regValue)[0];
 	mac_addr[5] = ((uint8_t*) & regValue)[1];
-
 	// If promiscuous mode is set, than allow accept all packets
 #ifdef PROMISCUOUS_MODE
 	enc424j600WriteReg(ERXFCON,(ERXFCON_CRCEN | ERXFCON_MPEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_NOTMEEN | ERXFCON_MCEN | ERXFCON_BCEN));
 #endif
-
 	// Set PHY Auto-negotiation to support 10BaseT Half duplex,
 	// 10BaseT Full duplex, 100BaseTX Half Duplex, 100BaseTX Full Duplex,
 	// and symmetric PAUSE capability
 	enc424j600WritePHYReg(PHANA, PHANA_ADPAUS0 | PHANA_AD10FD | PHANA_AD10 | PHANA_AD100FD | PHANA_AD100 | PHANA_ADIEEE0);
-
 	// Enable RX packet reception
 	enc424j600BFSReg(ECON1, ECON1_RXEN);
-		xSemaphoreGive( myBinarySemSpiHandle );
-	}
+	xSemaphoreGive( myBinarySemSpiHandle );
+
+	return 0;
 }
 
 /********************************************************************
@@ -111,8 +103,7 @@ void enc424j600Init(uint8_t *mac_addr)
  * ******************************************************************/
 void enc424j600SendSystemReset(void)
 {
-	//if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-	{
+//	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
 	volatile uint32_t delay;
 	// Perform a reset via the SPI/PSP interface
 	do {
@@ -129,63 +120,54 @@ void enc424j600SendSystemReset(void)
 		enc424j600BFSReg(ECON2, ECON2_ETHRST);
 		currentBank = 0;
 		while( (enc424j600ReadReg(ESTAT) & (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY)) != (ESTAT_CLKRDY | ESTAT_RSTDONE | ESTAT_PHYRDY) );
-
 		//_delay_us(300);
 		delay = ( 0.0003f * 180000000.0f );
 		delay *= 50;
 		while( delay-- );
-
 		// Check to see if the reset operation was successful by
 		// checking if EUDAST went back to its reset default.  This test
 		// should always pass, but certain special conditions might make
 		// this test fail, such as a PSP pin shorted to logic high.
 	} while( enc424j600ReadReg(EUDAST) != 0x0000u );
-
 	// Really ensure reset is done and give some time for power to be stable
 	//_delay_ms(1);
 	delay = ( 0.001f * 180000000.0f );
 	delay *= 50;
 	while(delay--);
-		//xSemaphoreGive( myBinarySemSpiHandle );
-	}
+//	xSemaphoreGive( myBinarySemSpiHandle );
 }
 
 uint16_t enc424j600EventHandler(void)
 {
-	uint16_t eirVal;
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	uint16_t eirVal = enc424j600ReadReg( EIRL );
+	if( eirVal )
 	{
-		eirVal = enc424j600ReadReg( EIRL );
-		if( eirVal )
-		{
-			if( ( eirVal & EIR_RXABTIF ) || ( eirVal & EIR_PCFULIF ) ) { // buffer overflow
-				//printf_P( PSTR("enc424j600EventHandler(): enc424j600ResetReceiver()\n") );
-				enc424j600ResetReceiver();
-			}
-			enc424j600BFCReg( EIRL, eirVal );
+		if( ( eirVal & EIR_RXABTIF ) || ( eirVal & EIR_PCFULIF ) )
+		{	// buffer overflow
+			//printf_P( PSTR("enc424j600EventHandler(): enc424j600ResetReceiver()\n") );
+			enc424j600ResetReceiver();
 		}
-		xSemaphoreGive( myBinarySemSpiHandle );
+		enc424j600BFCReg( EIRL, eirVal );
 	}
+	xSemaphoreGive( myBinarySemSpiHandle );
 	return eirVal;
 }
 
 void enc424j600ResetReceiver(void)
 {
-	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-	{
-		enc424j600BFSReg( ECON2, ECON2_RXRST );
-		enc424j600BFCReg( ECON2, ECON2_RXRST );
-		enc424j600BFCReg( ECON1, ECON1_RXEN );
+	xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	enc424j600BFSReg( ECON2, ECON2_RXRST );
+	enc424j600BFCReg( ECON2, ECON2_RXRST );
+	enc424j600BFCReg( ECON1, ECON1_RXEN );
 
-		nextPacketPointer = RXSTART;
+	nextPacketPointer = RXSTART;
 
-		enc424j600WriteReg( ERXST, RXSTART );
-		enc424j600WriteReg(ERXTAIL, RAMSIZE - 2);
+	enc424j600WriteReg( ERXST, RXSTART );
+	enc424j600WriteReg(ERXTAIL, RAMSIZE - 2);
 
-		enc424j600BFSReg( ECON1, ECON1_RXEN );
-
-		xSemaphoreGive( myBinarySemSpiHandle );
-	}
+	enc424j600BFSReg( ECON1, ECON1_RXEN );
+	xSemaphoreGive( myBinarySemSpiHandle );
 }
 
 /**
@@ -194,12 +176,9 @@ void enc424j600ResetReceiver(void)
  */
 char enc424j600MACIsLinked(void)
 {
-	uint8_t ret = 0;
-	//if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-	{
-		ret = ( 0 != ( ESTAT_PHYLNK & enc424j600ReadReg( ESTAT ) ) );
-	//	xSemaphoreGive( myBinarySemSpiHandle );
-	}
+//	if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+	uint8_t ret = ( 0 != ( ESTAT_PHYLNK & enc424j600ReadReg( ESTAT ) ) );
+//	xSemaphoreGive( myBinarySemSpiHandle );
 	return ret;
 }
 
@@ -336,7 +315,6 @@ uint16_t enc424j600PacketReceiveEnd( uint16_t len )
 static void enc424j600MACFlush(void)
 {
 	uint16_t w;
-
 	// Check to see if the duplex status has changed.  This can
 	// change if the user unplugs the cable and plugs it into a
 	// different node.  Auto-negotiation will automatically set
@@ -345,7 +323,6 @@ static void enc424j600MACFlush(void)
 	if( EIR_LINKIF & enc424j600ReadReg(EIR) )
 	{
 		enc424j600BFCReg(EIR, EIR_LINKIF);
-
 		// Update MAC duplex settings to match PHY duplex setting
 		w = enc424j600ReadReg( MACON2 );
 		if( ESTAT_PHYDPX & enc424j600ReadReg(ESTAT) )
@@ -360,8 +337,6 @@ static void enc424j600MACFlush(void)
 		}
 		enc424j600WriteReg(MACON2, w);
 	}
-
-
 	// Start the transmission, but only if we are linked.  Supressing
 	// transmissing when unlinked is necessary to avoid stalling the TX engine
 	// if we are in PHY energy detect power down mode and no link is present.
@@ -421,7 +396,7 @@ uint16_t enc424j600ReadReg(uint16_t address)
 	bank = ((uint8_t) address) & 0xE0;
 	if (bank <= (0x3u << 5))
 	{
-		//if (bank != currentBank)
+		if (bank != currentBank)
 		{
 			if (bank == (0x0u << 5))
 				enc424j600ExecuteOp0(B0SEL);
@@ -456,7 +431,7 @@ static void enc424j600WriteReg(uint16_t address, uint16_t data)
 	bank = ((uint8_t) address) & 0xE0;
 	if (bank <= (0x3u << 5))
 	{
-		//if (bank != currentBank)
+		if (bank != currentBank)
 		{
 			if (bank == (0x0u << 5))
 				enc424j600ExecuteOp0(B0SEL);
@@ -526,7 +501,7 @@ static void enc424j600BFSReg(uint16_t address, uint16_t bitMask)
 	uint8_t bank;
 	// See if we need to change register banks
 	bank = ((int8_t) address) & 0xE0;
-	//if (bank != currentBank)
+	if (bank != currentBank)
 	{
 		if (bank == (0x0u << 5))
 			enc424j600ExecuteOp0(B0SEL);
@@ -536,7 +511,6 @@ static void enc424j600BFSReg(uint16_t address, uint16_t bitMask)
 			enc424j600ExecuteOp0(B2SEL);
 		else if (bank == (0x3u << 5))
 			enc424j600ExecuteOp0(B3SEL);
-
 		currentBank = bank;
 	}
 	enc424j600ExecuteOp16(BFS | (address & 0x1F), bitMask);
@@ -548,7 +522,7 @@ void enc424j600BFCReg(uint16_t address, uint16_t bitMask)
 
 	// See if we need to change register banks
 	bank = ((uint8_t) address) & 0xE0;
-	//if (bank != currentBank)
+	if (bank != currentBank)
 	{
 		if (bank == (0x0u << 5))
 			enc424j600ExecuteOp0(B0SEL);
@@ -606,16 +580,20 @@ static uint8_t enc424j600ExecuteOp8( uint8_t op, uint8_t data )
  */
 static uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
 {
-	uint16_t returnValue = 0;
-	uint8_t buffer[2];
+	uint8_t buffer[3], rxValue[5];
+	uint16_t returnValue;
 
-	buffer[0] = data;
-	buffer[1] = data>>8;
+	buffer[0] = op;
+	buffer[1] = data;
+	buffer[2] = data>>8;
 
 	select_net_chip();
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
-	HAL_SPI_TransmitReceive( &hspi2, buffer, ((uint8_t*)&returnValue), 2, 1000 );
+	HAL_SPI_TransmitReceive( &hspi2, buffer, rxValue, 3, 100 );
 	unselect_net_chip();
+
+	returnValue  = rxValue[1];
+	returnValue |= rxValue[2]<<8;
+
 	return returnValue;
 }
 
@@ -626,17 +604,21 @@ static uint16_t enc424j600ExecuteOp16( uint8_t op, uint16_t data )
  */
 static uint32_t enc424j600ExecuteOp32( uint8_t op, uint32_t data )
 {
-	uint32_t returnValue = 0;
-	uint8_t buffer[4];
+	uint8_t buffer[5], rxValue[4];
+	uint32_t returnValue;
 
-	buffer[0] = data;
-	buffer[1] = data>>8;
-	buffer[2] = data>>16;
-	buffer[3] = data>>24;
+	buffer[0] = op;
+	buffer[1] = data;
+	buffer[2] = data>>8;
+	buffer[3] = data>>16;
 
 	select_net_chip();
-	HAL_SPI_Transmit( &hspi2, ((uint8_t*)&op), 1, 1000 );
-	HAL_SPI_TransmitReceive( &hspi2, buffer, ((uint8_t*)&returnValue), 3, 100 );
+	HAL_SPI_TransmitReceive( &hspi2, buffer, rxValue, 4, 100 );
 	unselect_net_chip();
+
+	returnValue  = rxValue[1];
+	returnValue |= rxValue[2]<<8;
+	returnValue |= rxValue[3]<<16;
+
 	return returnValue;
 }

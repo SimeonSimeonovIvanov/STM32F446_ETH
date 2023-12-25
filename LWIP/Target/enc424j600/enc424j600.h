@@ -52,6 +52,8 @@
 #ifndef __ENCX24J600_H
 #define __ENCX24J600_H
 
+#include "main.h"
+
 // Define macro for 8-bit PSP SFR address translation to SPI addresses
 #define ENC100_TRANSLATE_TO_PIN_ADDR(a)	 ((a) & 0x00FFu)
 
@@ -823,7 +825,7 @@ void enc424j600ResetReceiver(void);
 char enc424j600MACIsLinked(void);
 
 void enc424j600SendSystemReset(void);
-void enc424j600Init(uint8_t *mac_addr);
+uint8_t enc424j600Init(uint8_t *mac_addr);
 
 char enc424j600PacketSend(uint8_t* packet, uint16_t len);
 uint16_t enc424j600PacketReceive(uint8_t* packet, uint16_t maxlen);

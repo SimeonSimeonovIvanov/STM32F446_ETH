@@ -43,12 +43,14 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-// MB_FUNC_READ_DISCRETE_INPUTS					( 2 )
 #define REG_DISC_START							1
-#define REG_DISC_SIZE							32
+#define REG_DISC_SIZE							256
 
-#define REG_INPUT_START							1000
-#define REG_INPUT_NREGS							4
+#define REG_COILS_START							1
+#define REG_COILS_SIZE							256
+
+#define REG_INPUT_START							1
+#define REG_INPUT_NREGS							16
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -100,8 +102,9 @@ static uint8_t arrInput[ 256 ] = { 0 };
 static uint8_t arrOutput[ 256 ] = { 0 };
 static uint8_t usRS485PortLed[ 2 ] = { 0 };
 
-static UCHAR ucRegDiscBuf[REG_DISC_SIZE / 8];
-static USHORT usRegInputBuf[REG_INPUT_NREGS];
+static uint8_t ucRegDiscBuf[(REG_DISC_SIZE / 8) + 1];
+static uint8_t ucRegCoilsBuf[(REG_COILS_SIZE / 8) + 1];
+static uint16_t usRegInputBuf[REG_INPUT_NREGS];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -350,14 +353,19 @@ eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 	volatile eMBErrorCode eStatus = MB_ENOERR;
 	volatile short iNDiscrete = ( short )usNDiscrete;
 	volatile unsigned short usBitOffset;
-
 	/* Check if we have registers mapped at this block. */
 	if( (usAddress >= REG_DISC_START) &&
 		(usAddress + usNDiscrete <= REG_DISC_START + REG_DISC_SIZE)
-	) {
+	)
+	{
+		for(int i = 0; i < REG_DISC_SIZE; i++ )
+		{
+			bitarr_write(ucRegDiscBuf, i, 1 & arrInput[i]);
+		}
 //		uiModbusTimeOutCounter = 0;
 		usBitOffset = ( unsigned short )( usAddress - REG_DISC_START );
-		while(iNDiscrete > 0) {
+		while(iNDiscrete > 0)
+		{
 			*pucRegBuffer++ =
 			xMBUtilGetBits( ucRegDiscBuf, usBitOffset,
                             (unsigned char)(iNDiscrete>8? 8:iNDiscrete)
@@ -373,7 +381,53 @@ eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 
 eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils, eMBRegisterMode eMode)
 {
-    return MB_ENOREG;
+    short           iNCoils = ( short )usNCoils;
+    unsigned short  usBitOffset;
+
+	/* Check if we have registers mapped at this block. */
+	if( (usAddress >= REG_COILS_START) &&
+		(usAddress + usNCoils <= REG_COILS_START + REG_COILS_SIZE)
+	) {
+		usBitOffset = (unsigned short)(usAddress - REG_COILS_START);
+		switch(eMode)
+		{
+		// Read current values and pass to protocol stack.
+		// MB_FUNC_READ_COILS						( 1 )
+		case MB_REG_READ:
+//			uiModbusTimeOutCounter = 0;
+			for(int i = 0; i < REG_COILS_SIZE; i++ )
+			{
+				bitarr_write(ucRegCoilsBuf, i, 1 & arrOutput[i]);
+			}
+			while( iNCoils > 0 )
+			{
+				*pucRegBuffer++ =
+				xMBUtilGetBits( ucRegCoilsBuf, usBitOffset,
+								(unsigned char)((iNCoils > 8) ? 8 : iNCoils)
+				);
+				usBitOffset += 8;
+				iNCoils -= 8;
+			}
+		 return MB_ENOERR;
+		 // Update current register values.
+		 // MB_FUNC_WRITE_SINGLE_COIL				( 5 )
+		 // MB_FUNC_WRITE_MULTIPLE_COILS			( 15 )
+		 case MB_REG_WRITE:
+//		 	uiModbusTimeOutCounter = 0;
+		 	while( iNCoils > 0 )
+		 	{
+				/*xMBUtilSetBits( ucRegCoilsBuf, usBitOffset,
+								(unsigned char)((iNCoils > 8) ? 8 : iNCoils),
+								*pucRegBuffer++
+				);*/
+				usBitOffset += 8;
+				iNCoils -= 8;
+			}
+		 return MB_ENOERR;
+		}
+	}
+
+	return MB_ENOREG;
 }
 
 eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs)
@@ -474,7 +528,7 @@ void ModBusSlaveTask(void *argument)
 	for(;;)
 	{
 		eMBPoll();
-		ucRegDiscBuf[0]++;
+		arrInput[0]++;
 		usRegInputBuf[0]++;
 		portYIELD();
 	}

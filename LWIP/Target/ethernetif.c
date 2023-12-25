@@ -35,85 +35,25 @@
 #include "cmsis_os.h"
 #include "semphr.h"
 
-extern osSemaphoreId_t myBinarySemSpiHandle;
-
-/* Within 'USER CODE' section, code will be kept by default at each generation */
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/* Private define ------------------------------------------------------------*/
 #define TIME_WAITING_FOR_INPUT ( portMAX_DELAY )
-/* USER CODE BEGIN OS_THREAD_STACK_SIZE_WITH_RTOS */
-/* Stack size of the interface thread */
 #define INTERFACE_THREAD_STACK_SIZE ( 1024 )
 
 /* Network interface name */
 #define IFNAME0 's'
 #define IFNAME1 't'
 
-/* USER CODE BEGIN 1 */
+extern osSemaphoreId_t myBinarySemSpiHandle;
 
-/* USER CODE END 1 */
-
-/* Private variables ---------------------------------------------------------*/
-#if defined ( __ICCARM__ ) /*!< IAR Compiler */
-  #pragma data_alignment=4
-#endif
-//__ALIGN_BEGIN ETH_DMADescTypeDef  DMARxDscrTab[ETH_RXBUFNB] __ALIGN_END;/* Ethernet Rx MA Descriptor */
-
-#if defined ( __ICCARM__ ) /*!< IAR Compiler */
-  #pragma data_alignment=4
-#endif
-//__ALIGN_BEGIN ETH_DMADescTypeDef  DMATxDscrTab[ETH_TXBUFNB] __ALIGN_END;/* Ethernet Tx DMA Descriptor */
-
-#if defined ( __ICCARM__ ) /*!< IAR Compiler */
-  #pragma data_alignment=4
-#endif
-__ALIGN_BEGIN uint8_t Rx_Buff[2*ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive Buffer */
-
-#if defined ( __ICCARM__ ) /*!< IAR Compiler */
-  #pragma data_alignment=4
-#endif
-__ALIGN_BEGIN uint8_t Tx_Buff[2*ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
-
-/* USER CODE BEGIN 2 */
-
-/* USER CODE END 2 */
+__ALIGN_BEGIN uint8_t Rx_Buff[ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive Buffer */
+//__ALIGN_BEGIN uint8_t Tx_Buff[ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
 
 /* Semaphore to signal incoming packets */
 osSemaphoreId s_xSemaphore = NULL;
-/* Global Ethernet handle */
-ETH_HandleTypeDef heth;
 
-/* USER CODE BEGIN 3 */
-
-/* USER CODE END 3 */
-
-/* Private functions ---------------------------------------------------------*/
-
-void HAL_ETH_MspInit(ETH_HandleTypeDef* ethHandle)
+void HAL_ETH_RxCpltCallback(void)
 {
+	osSemaphoreRelease(s_xSemaphore);
 }
-
-void HAL_ETH_MspDeInit(ETH_HandleTypeDef* ethHandle)
-{
-}
-
-/**
-  * @brief  Ethernet Rx Transfer completed callback
-  * @param  heth: ETH handle
-  * @retval None
-  */
-void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *heth)
-{
-  osSemaphoreRelease(s_xSemaphore);
-}
-
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
-
 /*******************************************************************************
                        LL Driver Interface ( LwIP stack --> ETH)
 *******************************************************************************/
@@ -126,107 +66,47 @@ void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *heth)
  */
 static void low_level_init(struct netif *netif)
 {
-  uint8_t MACAddr[6] = { 0 };
-  HAL_StatusTypeDef hal_eth_init_status;
-/* USER CODE BEGIN OS_THREAD_ATTR_CMSIS_RTOS_V2 */
-  osThreadAttr_t attributes;
-/* USER CODE END OS_THREAD_ATTR_CMSIS_RTOS_V2 */
+	uint8_t status, MACAddr[6] = { 0 };
+	osThreadAttr_t attributes;
 
-/* Init ETH */
-
-  /* USER CODE BEGIN MACADDRESS */
-
-  /* USER CODE END MACADDRESS */
-
-  //hal_eth_init_status = HAL_ETH_Init(&heth);
-
-  enc424j600Init( MACAddr );
-  hal_eth_init_status = HAL_OK;
-  //if (hal_eth_init_status == HAL_OK)
-  {
-    /* Set netif link flag */
-	  netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
-  }
-
-  /* Initialize the RX POOL */
-  //LWIP_MEMPOOL_INIT(RX_POOL);
-
+	status = enc424j600Init( MACAddr );if (0 == status)
+	{	/* Set netif link flag */
+		netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
+	}
+	/* Initialize the RX POOL */
+	//LWIP_MEMPOOL_INIT(RX_POOL);
 #if LWIP_ARP || LWIP_ETHERNET
-  /* set MAC hardware address length */
-  netif->hwaddr_len = ETH_HWADDR_LEN;
-
-  /* set MAC hardware address */
-  netif->hwaddr[0] =  MACAddr[0];
-  netif->hwaddr[1] =  MACAddr[1];
-  netif->hwaddr[2] =  MACAddr[2];
-  netif->hwaddr[3] =  MACAddr[3];
-  netif->hwaddr[4] =  MACAddr[4];
-  netif->hwaddr[5] =  MACAddr[5];
-  /*netif->hwaddr[0] =  MACAddr[5];
-  netif->hwaddr[1] =  MACAddr[4];
-  netif->hwaddr[2] =  MACAddr[3];
-  netif->hwaddr[3] =  MACAddr[2];
-  netif->hwaddr[4] =  MACAddr[1];
-  netif->hwaddr[5] =  MACAddr[0];*/
-
-  /* maximum transfer unit */
-  netif->mtu = 1500;
-
-  /* Accept broadcast address and ARP traffic */
-  /* don't set NETIF_FLAG_ETHARP if this device is not an ethernet one */
+	/* set MAC hardware address length */
+	netif->hwaddr_len = ETH_HWADDR_LEN;
+	/* set MAC hardware address */
+	netif->hwaddr[0] = MACAddr[0];
+	netif->hwaddr[1] = MACAddr[1];
+	netif->hwaddr[2] = MACAddr[2];
+	netif->hwaddr[3] = MACAddr[3];
+	netif->hwaddr[4] = MACAddr[4];
+	netif->hwaddr[5] = MACAddr[5];
+	/* maximum transfer unit */
+	netif->mtu = 1500;
+	/* Accept broadcast address and ARP traffic */
+	/* don't set NETIF_FLAG_ETHARP if this device is not an ethernet one */
   #if LWIP_ARP
 	netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
   #else
     netif->flags |= NETIF_FLAG_BROADCAST;
   #endif /* LWIP_ARP */
-
-/* create a binary semaphore used for informing ethernetif of frame reception */
-  s_xSemaphore = osSemaphoreNew(1, 1, NULL);
-
-/* create the task that handles the ETH_MAC */
-/* USER CODE BEGIN OS_THREAD_NEW_CMSIS_RTOS_V2 */
-  memset(&attributes, 0x0, sizeof(osThreadAttr_t));
-  attributes.name = "EthIf";
-  attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
-  attributes.priority = osPriorityRealtime;
-  osThreadNew(ethernetif_input, netif, &attributes);
-/* USER CODE END OS_THREAD_NEW_CMSIS_RTOS_V2 */
-  /* Enable MAC and DMA transmission and reception */
-  //HAL_ETH_Start(&heth);
-
-/* USER CODE BEGIN PHY_PRE_CONFIG */
-
-/* USER CODE END PHY_PRE_CONFIG */
-
-  /**** Configure PHY to generate an interrupt when Eth Link state changes ****/
-  /* Read Register Configuration */
-  //HAL_ETH_ReadPHYRegister(&heth, PHY_MICR, &regvalue);
-
-  //regvalue |= (PHY_MICR_INT_EN | PHY_MICR_INT_OE);
-
-  /* Enable Interrupts */
-  //HAL_ETH_WritePHYRegister(&heth, PHY_MICR, regvalue );
-
-  /* Read Register Configuration */
-  //HAL_ETH_ReadPHYRegister(&heth, PHY_MISR, &regvalue);
-
-  //regvalue |= PHY_MISR_LINK_INT_EN;
-
-  /* Enable Interrupt on change of link status */
-  //HAL_ETH_WritePHYRegister(&heth, PHY_MISR, regvalue);
-
-/* USER CODE BEGIN PHY_POST_CONFIG */
-
-/* USER CODE END PHY_POST_CONFIG */
-
+    /* create a binary semaphore used for informing ethernetif of frame reception */
+    s_xSemaphore = osSemaphoreNew(1, 1, NULL);
+    /* create the task that handles the ETH_MAC */
+    memset(&attributes, 0x0, sizeof(osThreadAttr_t));
+    attributes.name = "EthIf";
+    attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
+    attributes.priority = osPriorityRealtime;
+    osThreadNew(ethernetif_input, netif, &attributes);
 #endif /* LWIP_ARP || LWIP_ETHERNET */
+    netif_set_up(netif);
+    netif_set_link_up(netif);
 
-/* USER CODE BEGIN LOW_LEVEL_INIT */
-
-  netif_set_up(netif);
-  netif_set_link_up(netif);
-
-  httpd_init();
+    httpd_init();
 }
 
 /**
@@ -244,8 +124,7 @@ static void low_level_init(struct netif *netif)
  *       to become available since the stack doesn't retry to send a packet
  *       dropped because of memory failure (except for the TCP timers).
  */
-
-static err_t low_level_output(struct netif *netif, struct pbuf *p)
+/*static err_t low_level_output_(struct netif *netif, struct pbuf *p)
 {
 	uint16_t framelength = 0;
 	struct pbuf *q;
@@ -253,40 +132,40 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 
 	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 #if ETH_PAD_SIZE
-	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
+	pbuf_header(p, -ETH_PAD_SIZE); // drop the padding word
 #endif
 	for(q = p; q != NULL; q = q->next )
-	{	/* copy frame from pbufs to driver buffers */
+	{	// copy frame from pbufs to driver buffers
 		memcpy( &Tx_Buff[framelength], q->payload, q->len );
 		framelength += q->len;
 	}
-	errval = enc424j600PacketSend( Tx_Buff, p->tot_len/*framelength*/ ) ? !ERR_OK:ERR_OK;
+	errval = enc424j600PacketSend(Tx_Buff, p->tot_len) ? !ERR_OK:ERR_OK;
 #if ETH_PAD_SIZE
-	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+	pbuf_header(p, ETH_PAD_SIZE); // reclaim the padding word
 #endif
 	LINK_STATS_INC(link.xmit);
 	xSemaphoreGive(myBinarySemSpiHandle);
 
 	return errval;
-}
+}*/
 
-static err_t low_level_output_(struct netif *netif, struct pbuf *p)
+static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
 	err_t errval = ERR_OK;
 	struct pbuf *q;
 
 	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
 #if ETH_PAD_SIZE
-	pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
+	pbuf_header(p, -ETH_PAD_SIZE); // drop the padding word
 #endif
 	enc424j600PacketBegin();
 	for(q = p; q != NULL; q = q->next )
-	{	/* copy frame from pbufs to driver buffers */
+	{	// copy frame from pbufs to driver buffers
 		enc424j600PacketSendPart( q->payload, q->len );
 	}
 	enc424j600PacketEnd( p->tot_len );
 #if ETH_PAD_SIZE
-	pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+	pbuf_header(p, ETH_PAD_SIZE); // reclaim the padding word
 #endif
 	LINK_STATS_INC(link.xmit);
 	xSemaphoreGive(myBinarySemSpiHandle);
