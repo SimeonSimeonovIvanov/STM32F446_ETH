@@ -33,6 +33,11 @@
 #include "mbport.h"
 #include "mbutils.h"
 
+#include "bacnet/basic/sys/mstimer.h"
+//#include "bacnet.h"
+//#include "rs485.h"
+//#include "led.h"
+
 #include "hmi_task.h"
 /* USER CODE END Includes */
 
@@ -162,6 +167,11 @@ int main(void)
   eStatus = eStatus;
 
   hmiInitLeds();
+
+  mstimer_init();
+  led_init();
+  rs485_init();
+  bacnet_init();
   /* USER CODE END 2 */
 
   /* Init scheduler */
