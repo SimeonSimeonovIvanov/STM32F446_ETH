@@ -38,7 +38,7 @@ static volatile unsigned long Millisecond_Counter;
 /**
  * Handles the interrupt from the timer
  */
-void SysTick_Handler_(void)
+void Bacnet_SysTick_Handler(void)
 {
     /* increment the tick count */
     Millisecond_Counter++;
@@ -70,4 +70,5 @@ void mstimer_init(void)
         }
     }
     //NVIC_EnableIRQ(SysTick_IRQn);
+	Millisecond_Counter = 0;
 }
