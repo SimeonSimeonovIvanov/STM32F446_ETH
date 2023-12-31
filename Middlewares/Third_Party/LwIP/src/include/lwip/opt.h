@@ -266,7 +266,7 @@
  *  \#define MEM_CUSTOM_CALLOC my_calloc
  */
 #if !defined MEM_CUSTOM_ALLOCATOR || defined __DOXYGEN__
-#define MEM_CUSTOM_ALLOCATOR            0
+#define MEM_CUSTOM_ALLOCATOR            1
 #endif
 
 /**

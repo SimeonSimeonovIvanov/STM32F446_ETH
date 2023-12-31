@@ -119,7 +119,12 @@
 #define LWIP_DBG_MIN_LEVEL LWIP_DBG_MASK_LEVEL
 /*-----------------------------------------------------------------------------*/
 /* USER CODE BEGIN 1 */
+extern void *pvPortMalloc( size_t xWantedSize );
+extern void vPortFree( void *pv );
 
+#define MEM_CUSTOM_FREE(p)        vPortFree(p)
+#define MEM_CUSTOM_MALLOC(s)      pvPortMalloc(s)
+#define MEM_CUSTOM_CALLOC(n,s)    pvPortMalloc(n*s)
 /* USER CODE END 1 */
 
 #ifdef __cplusplus
