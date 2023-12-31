@@ -36,6 +36,8 @@
 #include "bacnet/datalink/dlmstp.h"
 #include "bacnet/datalink/mstpdef.h"
 #include "rs485.h"
+
+#include "cmsis_os.h"
 #include "main.h"
 
 extern UART_HandleTypeDef huart4;

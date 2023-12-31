@@ -29,9 +29,13 @@
 #include "semphr.h"
 #include "api.h"
 
+#include "bit-array.h"
+
 #include "mb.h"
 #include "mbport.h"
 #include "mbutils.h"
+
+#include "bacnet/bacdef.h"
 
 #include "bacnet_task.h"
 #include "hmi_task.h"
@@ -70,7 +74,7 @@ UART_HandleTypeDef huart4;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for myBinarySemSpi */
@@ -96,7 +100,7 @@ const osThreadAttr_t ModBusSlaveTask_attributes = {
 osThreadId_t BacnetTaskHandle;
 const osThreadAttr_t BacnetTask_attributes = {
   .name = "BacnetTask",
-  .stack_size = 256 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -107,6 +111,8 @@ const osThreadAttr_t myHmiTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+
+extern BACNET_BINARY_PV Binary_Output_Level[/*MAX_BINARY_OUTPUTS*/][BACNET_MAX_PRIORITY];
 
 static HMI_TASK_ARG hmi_task_arg;
 
@@ -531,6 +537,7 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 //			uiModbusTimeOutCounter = 0;
 			for(int i = 0; i < REG_COILS_SIZE; i++ )
 			{
+				arrOutput[i] = Binary_Output_Level[i][15] ? 1 : 0;
 				bitarr_write(ucRegCoilsBuf, i, 1 & arrOutput[i]);
 			}
 			while( iNCoils > 0 )
@@ -550,13 +557,18 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 //		 	uiModbusTimeOutCounter = 0;
 		 	while( iNCoils > 0 )
 		 	{
-				/*xMBUtilSetBits( ucRegCoilsBuf, usBitOffset,
+				xMBUtilSetBits( ucRegCoilsBuf, usBitOffset,
 								(unsigned char)((iNCoils > 8) ? 8 : iNCoils),
 								*pucRegBuffer++
-				);*/
+				);
 				usBitOffset += 8;
 				iNCoils -= 8;
 			}
+		 	for(int i = 0; i < REG_COILS_SIZE; i++ )
+		 	{
+		 		arrOutput[i] = bitarr_read(ucRegCoilsBuf, i);
+		 		Binary_Output_Level[i][15] = arrOutput[i];
+		 	}
 		 return MB_ENOERR;
 		}
 	}
@@ -655,10 +667,6 @@ void ModBusTCPSlaveTask(void *argument)
 
 void ModBusSlaveTask(void *argument)
 {
-  /* USER CODE BEGIN 5 */
-//	MX_LWIP_Init();
-//	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
-//	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
 	for(;;)
 	{
 		eMBPoll();
@@ -666,7 +674,6 @@ void ModBusSlaveTask(void *argument)
 		usRegInputBuf[0]++;
 		portYIELD();
 	}
-  /* USER CODE END 5 */
 }
 
 static void MX_TIM9_Init_New(void)
@@ -726,16 +733,30 @@ static void MX_TIM9_Init_New(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-//	MX_LWIP_Init();
-//	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
-//	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
+	MX_LWIP_Init();
+	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
 	for(;;)
 	{
-		eMBPoll();
-		arrInput[0]++;
-		usRegInputBuf[0]++;
-		portYIELD();
-	}
+		//enc424j600EventHandler();
+		//if( EIR_PKTIF & enc424j600EventHandler() ) //enc424j600ReadReg(EIRL) )
+		xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
+		/*if( EIR_PKTIF & enc424j600ReadReg(EIR) )
+		{
+			enc424j600BFCReg(EIR, EIR_PKTIF);
+			if( NULL != s_xSemaphore )
+			{
+				osSemaphoreRelease(s_xSemaphore);
+			}
+		}*/
+		if(EIR_PKTIF & enc424j600ReadReg(EIR))
+		{
+			osSemaphoreRelease(s_xSemaphore);
+			usRS485PortLed[0] ^= 1;
+		}
+		xSemaphoreGive(myBinarySemSpiHandle);
+ 		portYIELD();
+ 	}
   /* USER CODE END 5 */
 }
 
