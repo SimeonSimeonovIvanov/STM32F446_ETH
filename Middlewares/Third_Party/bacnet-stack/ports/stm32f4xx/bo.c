@@ -356,6 +356,10 @@ bool Binary_Output_Write_Property(BACNET_WRITE_PROPERTY_DATA *wp_data)
         return false;
     }
     switch (wp_data->object_property) {
+//      case PROP_OBJECT_NAME:
+//      case PROP_DESCRIPTION:
+//      	status = true;
+//          break;
         case PROP_PRESENT_VALUE:
             if (value.tag == BACNET_APPLICATION_TAG_ENUMERATED) {
                 priority = wp_data->priority;

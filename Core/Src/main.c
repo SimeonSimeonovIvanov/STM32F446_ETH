@@ -74,7 +74,7 @@ UART_HandleTypeDef huart4;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 512 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for myBinarySemSpi */
@@ -100,7 +100,7 @@ const osThreadAttr_t ModBusSlaveTask_attributes = {
 osThreadId_t BacnetTaskHandle;
 const osThreadAttr_t BacnetTask_attributes = {
   .name = "BacnetTask",
-  .stack_size = 2048 * 4,
+  .stack_size = (256 + (MAX_APDU * 4)) * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -537,7 +537,10 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 //			uiModbusTimeOutCounter = 0;
 			for(int i = 0; i < REG_COILS_SIZE; i++ )
 			{
-				arrOutput[i] = Binary_Output_Level[i][15] ? 1 : 0;
+				if(i < 16/*MAX_BINARY_OUTPUTS*/)
+				{
+					arrOutput[i] = Binary_Output_Level[i][15] ? 1 : 0;
+				}
 				bitarr_write(ucRegCoilsBuf, i, 1 & arrOutput[i]);
 			}
 			while( iNCoils > 0 )
@@ -567,7 +570,10 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 		 	for(int i = 0; i < REG_COILS_SIZE; i++ )
 		 	{
 		 		arrOutput[i] = bitarr_read(ucRegCoilsBuf, i);
-		 		Binary_Output_Level[i][15] = arrOutput[i];
+		 		if(i < 16/*MAX_BINARY_OUTPUTS*/)
+			 	{
+			 		Binary_Output_Level[i][15] = arrOutput[i];
+			 	}
 		 	}
 		 return MB_ENOERR;
 		}

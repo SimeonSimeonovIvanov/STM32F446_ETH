@@ -106,7 +106,7 @@
 #if defined(BACNET_SECURITY)
 #define MAX_APDU 412
 #else
-#define MAX_APDU 1476
+#define MAX_APDU 480
 #endif
 #else
 #if defined(BACNET_SECURITY)
