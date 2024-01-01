@@ -56,6 +56,9 @@
 
 #define REG_INPUT_START							1
 #define REG_INPUT_NREGS							16
+
+#define REG_HOLDING_START						1
+#define REG_HOLDING_NREGS						50
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -123,6 +126,7 @@ static uint8_t usRS485PortLed[ 2 ] = { 0 };
 static uint8_t ucRegDiscBuf[(REG_DISC_SIZE / 8) + 1];
 static uint8_t ucRegCoilsBuf[(REG_COILS_SIZE / 8) + 1];
 static uint16_t usRegInputBuf[REG_INPUT_NREGS];
+static uint16_t uiRegHolding[REG_HOLDING_NREGS];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -513,6 +517,7 @@ eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 			iNDiscrete -= 8;
 			usBitOffset += 8;
 		}
+		arrInput[0]++;
 		return MB_ENOERR;
 	}
 
@@ -600,6 +605,7 @@ eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNReg
             iRegIndex++;
             usNRegs--;
         }
+        usRegInputBuf[0]++;
     }
     else
     {
@@ -611,7 +617,67 @@ eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNReg
 
 eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs, eMBRegisterMode eMode)
 {
-    return MB_ENOREG;
+	unsigned int iRegIndex;
+
+	/* Check if we have registers mapped at this block. */
+	if( (usAddress >= REG_HOLDING_START) &&
+		(usAddress + usNRegs <= REG_HOLDING_START + REG_HOLDING_NREGS)
+	) {
+		switch(eMode) {
+		case MB_REG_READ:
+//			uiModbusTimeOutCounter = 0;
+			iRegIndex = (int)(usAddress - 1);
+			while( usNRegs > 0 ) {
+				*pucRegBuffer++ = uiRegHolding[iRegIndex]>>8;
+				*pucRegBuffer++ = uiRegHolding[iRegIndex];
+				++iRegIndex;
+				--usNRegs;
+			}
+		 return MB_ENOERR;
+
+		/*
+		 	Update current register values.
+		 	MB_FUNC_WRITE_MULTIPLE_REGISTERS             (16)
+		*/
+		case MB_REG_WRITE: {
+			uint16_t dac = uiRegHolding[4];
+			// Запазва текущия работен диапазон на ADC и DAC.
+			uint16_t old = 0x0F03 & uiRegHolding[14];
+//			uint16_t oldUartControl = 0x000f & uiRegHolding[17];
+
+//			uiModbusTimeOutCounter = 0;
+			iRegIndex = (int)(usAddress - 1);
+			while( usNRegs > 0 ) {
+				uiRegHolding[iRegIndex]  = (*pucRegBuffer++)<<8;
+				uiRegHolding[iRegIndex] |= *pucRegBuffer++;
+				++iRegIndex;
+				--usNRegs;
+			}
+			///////////////////////////////////////////////////////////////////////////////////////////////////////////
+			if(0x0080 & uiRegHolding[4]) {
+				uiRegHolding[4] = (0x007f & dac) | (0xff00 & uiRegHolding[4]);
+			}
+
+			if(0x8000 & uiRegHolding[4]) {
+				uiRegHolding[4] = (0x7f00 & dac) | (0x00ff & uiRegHolding[4]);
+			}
+
+			// Ако не е зададен нов работен диапазон, се възстановява стария:
+			if(!(0x0003 & uiRegHolding[14])) uiRegHolding[14] |= (0x0003 & old);
+
+			// DAC0 - Запазване на стария работен диапазон:
+			if(!(0x0300 & uiRegHolding[14])) uiRegHolding[14] |= (0x0300 & old);
+			// DAC1 - Запазване на стария работен диапазон:
+			if(!(0x0C00 & uiRegHolding[14])) uiRegHolding[14] |= (0x0C00 & old);
+
+			//if(!(0x0003 & uiRegHolding[17])) uiRegHolding[17] |= (0x0003 & oldUartControl);
+			//if(!(0x000c & uiRegHolding[17])) uiRegHolding[17] |= (0x000c & oldUartControl);
+		}
+		 return MB_ENOERR;
+		}
+	}
+
+	return MB_ENOREG;
 }
 
 uint8_t mb_rx_msg[600], mb_tx_msg[600];
@@ -676,8 +742,6 @@ void ModBusSlaveTask(void *argument)
 	for(;;)
 	{
 		eMBPoll();
-		arrInput[0]++;
-		usRegInputBuf[0]++;
 		portYIELD();
 	}
 }
