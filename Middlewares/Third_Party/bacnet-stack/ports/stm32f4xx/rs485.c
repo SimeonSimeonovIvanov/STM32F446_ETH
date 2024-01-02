@@ -119,7 +119,7 @@ bool rs485_receive_error(void)
 static void ClearUartErrors( UART_HandleTypeDef *huart )
 {
 	if( __HAL_UART_GET_FLAG( huart, UART_FLAG_ORE ) )
-	{
+	{	/* note: enabling RXNE interrupt also enables the ORE interrupt! */
 		__HAL_UART_CLEAR_OREFLAG( huart );
 	}
 
@@ -146,10 +146,9 @@ static void ClearUartErrors( UART_HandleTypeDef *huart )
 //__HAL_UART_ENABLE_IT(&huart4, UART_IT_TXE);
 void rs485_Bacnet_Handler(void)
 {
-	uint8_t data_byte;
 	if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_RXNE ) )
 	{	/* Read one byte from the receive data register */
-		data_byte = __HAL_UART_FLUSH_DRREGISTER(&huart4);
+		uint8_t data_byte = __HAL_UART_FLUSH_DRREGISTER(&huart4);
 		if (!Transmitting)
 		{
 			FIFO_Put(&Receive_Queue, data_byte);
@@ -157,40 +156,34 @@ void rs485_Bacnet_Handler(void)
 		}
 		__HAL_UART_CLEAR_FLAG( &huart4, UART_FLAG_RXNE );
 	}
-    if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_TXE ) )
-    {
-        if (FIFO_Count(&Transmit_Queue))
-        {
-            //USART_SendData(USART6, FIFO_Get(&Transmit_Queue));
-        	__HAL_UART_FLUSH_DRREGISTER(&huart4) = FIFO_Get(&Transmit_Queue);
-            RS485_Transmit_Bytes += 1;
-            rs485_silence_reset();
-        }
-        else
-        {	/* disable the USART to generate interrupts on TX empty */
-        	__HAL_UART_DISABLE_IT(&huart4, UART_IT_TXE);
-            /* enable the USART to generate interrupts on TX complete */
-        	__HAL_UART_ENABLE_IT(&huart4, UART_IT_TC);
-        }
-        //USART_ClearITPendingBit(USART6, USART_IT_TXE);
-    }
-    if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_TC ) )
-    {
-        rs485_rts_enable(false);
-        /* disable the USART to generate interrupts on TX complete */
-        __HAL_UART_DISABLE_IT(&huart4, UART_IT_TC);
-        /* enable the USART to generate interrupts on RX not empty */
-        __HAL_UART_ENABLE_IT(&huart4, UART_IT_RXNE);
-        __HAL_UART_CLEAR_FLAG( &huart4, UART_FLAG_TC );
-    }
-    /* check for errors and clear them */
-    if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_ORE ) )
-	{	/* note: enabling RXNE interrupt also enables the ORE interrupt! */
-        /* dummy read to clear error state */
-    	data_byte = __HAL_UART_FLUSH_DRREGISTER(&huart4);
-    	__HAL_UART_CLEAR_FLAG( &huart4, UART_FLAG_TC );
-    }
-    ClearUartErrors(&huart4);
+	if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_TXE ) )
+	{
+		if (FIFO_Count(&Transmit_Queue))
+		{
+			__HAL_UART_FLUSH_DRREGISTER(&huart4) = FIFO_Get(&Transmit_Queue);
+			RS485_Transmit_Bytes += 1;
+			rs485_silence_reset();
+		}
+		else
+		{	/* disable the USART to generate interrupts on TX empty */
+			__HAL_UART_DISABLE_IT(&huart4, UART_IT_TXE);
+			/* enable the USART to generate interrupts on TX complete */
+			__HAL_UART_ENABLE_IT(&huart4, UART_IT_TC);
+		}
+		/* TXE flag is cleared only by a write to the USART_DR register.
+		 * USART_ClearITPendingBit(USART6, USART_IT_TXE);
+		 */
+	}
+	if( SET == __HAL_UART_GET_FLAG( &huart4, UART_FLAG_TC ) )
+	{
+		rs485_rts_enable(false);
+		/* disable the USART to generate interrupts on TX complete */
+		__HAL_UART_DISABLE_IT(&huart4, UART_IT_TC);
+		/* enable the USART to generate interrupts on RX not empty */
+		__HAL_UART_ENABLE_IT(&huart4, UART_IT_RXNE);
+		__HAL_UART_CLEAR_FLAG( &huart4, UART_FLAG_TC );
+	}
+	ClearUartErrors(&huart4);
 }
 
 /**
