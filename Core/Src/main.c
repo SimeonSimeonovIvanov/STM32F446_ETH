@@ -544,7 +544,7 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 			{
 				if(i < 16/*MAX_BINARY_OUTPUTS*/)
 				{
-					arrOutput[i] = Binary_Output_Level[i][15] ? 1 : 0;
+					arrOutput[i] = (BINARY_ACTIVE == Binary_Output_Level[i][15]) ? 1 : 0;
 				}
 				bitarr_write(ucRegCoilsBuf, i, 1 & arrOutput[i]);
 			}
@@ -577,7 +577,7 @@ eMBErrorCode eMBRegCoilsCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoi
 		 		arrOutput[i] = bitarr_read(ucRegCoilsBuf, i);
 		 		if(i < 16/*MAX_BINARY_OUTPUTS*/)
 			 	{
-			 		Binary_Output_Level[i][15] = arrOutput[i];
+			 		Binary_Output_Level[i][15] = (1 & arrOutput[i]) ? BINARY_ACTIVE : BINARY_INACTIVE;
 			 	}
 		 	}
 		 return MB_ENOERR;
