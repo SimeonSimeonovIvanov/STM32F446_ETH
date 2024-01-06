@@ -117,6 +117,20 @@
 #define CHECKSUM_CHECK_ICMP6 0
 /*----- Default Value for LWIP_DBG_MIN_LEVEL: LWIP_DBG_LEVEL_ALL ---*/
 #define LWIP_DBG_MIN_LEVEL LWIP_DBG_MASK_LEVEL
+/*----- Value in opt.h for MEMP_NUM_RAW_PCB: 4 -----*/
+#define MEMP_NUM_RAW_PCB                5
+/*----- Value in opt.h for MEMP_NUM_TCP_PCB: 5 -----*/
+#define MEMP_NUM_TCP_PCB                10
+/*----- Value in opt.h for MEMP_NUM_TCP_PCB_LISTEN: 8 -----*/
+#define MEMP_NUM_TCP_PCB_LISTEN         12
+/*----- Value in opt.h for MEMP_NUM_NETBUF: 2 -----*/
+#define MEMP_NUM_NETBUF                 6
+/*----- Value in opt.h for MEMP_NUM_NETCONN: 4 -----*/
+#define MEMP_NUM_NETCONN                8
+/*----- Value in opt.h for LWIP_SO_SNDTIMEO: 0 -----*/
+#define LWIP_SO_SNDTIMEO                1
+/*----- Value in opt.h for LWIP_SO_RCVTIMEO: 0 -----*/
+#define LWIP_SO_RCVTIMEO                1
 /*-----------------------------------------------------------------------------*/
 /* USER CODE BEGIN 1 */
 extern void *pvPortMalloc( size_t xWantedSize );

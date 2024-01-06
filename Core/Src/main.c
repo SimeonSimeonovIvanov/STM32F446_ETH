@@ -86,16 +86,62 @@ const osSemaphoreAttr_t myBinarySemSpi_attributes = {
   .name = "myBinarySemSpi"
 };
 /* USER CODE BEGIN PV */
-osThreadId_t ModBusTCPSlaveTaskHandle;
-const osThreadAttr_t ModBusTCPSlaveTask_attributes = {
-  .name = "ModBusTCPSlaveTask",
-  .stack_size = 256 * 4,
+static StaticTask_t ModBusTCPSlaveTaskCB[5];
+static StackType_t ModBusTCPSlaveTaskStk[5][250];
+const osThreadAttr_t ModBusTCPSlaveTask_attributes[5] =
+{
+	{
+		.name		= "mbTCPSTask1",
+		.cb_mem		= &ModBusTCPSlaveTaskCB[0],
+		.cb_size	= sizeof(ModBusTCPSlaveTaskCB[0]),
+		.stack_mem	= &ModBusTCPSlaveTaskStk[0][0],
+		.stack_size	= sizeof(ModBusTCPSlaveTaskStk[0]),
+		.priority	= (osPriority_t) osPriorityNormal,
+	},
+	{
+		.name		= "mbTCPSTask2",
+		.cb_mem		= &ModBusTCPSlaveTaskCB[1],
+		.cb_size	= sizeof(ModBusTCPSlaveTaskCB[1]),
+		.stack_mem	= &ModBusTCPSlaveTaskStk[1][0],
+		.stack_size	= sizeof(ModBusTCPSlaveTaskStk[1]),
+		.priority	= (osPriority_t) osPriorityNormal,
+	},
+	{
+		.name		= "mbTCPSTask3",
+		.cb_mem		= &ModBusTCPSlaveTaskCB[2],
+		.cb_size	= sizeof(ModBusTCPSlaveTaskCB[2]),
+		.stack_mem	= &ModBusTCPSlaveTaskStk[2][0],
+		.stack_size	= sizeof(ModBusTCPSlaveTaskStk[2]),
+		.priority	= (osPriority_t) osPriorityNormal,
+	},
+	{
+		.name		= "mbTCPSTask4",
+		.cb_mem		= &ModBusTCPSlaveTaskCB[3],
+		.cb_size	= sizeof(ModBusTCPSlaveTaskCB[3]),
+		.stack_mem	= &ModBusTCPSlaveTaskStk[3][0],
+		.stack_size	= sizeof(ModBusTCPSlaveTaskStk[3]),
+		.priority	= (osPriority_t) osPriorityNormal,
+	},
+	{
+		.name		= "mbTCPSTask5",
+		.cb_mem		= &ModBusTCPSlaveTaskCB[4],
+		.cb_size	= sizeof(ModBusTCPSlaveTaskCB[4]),
+		.stack_mem	= &ModBusTCPSlaveTaskStk[4][0],
+		.stack_size	= sizeof(ModBusTCPSlaveTaskStk[4]),
+		.priority	= (osPriority_t) osPriorityNormal,
+	},
+};
+
+osThreadId_t ModBusTCPSlaveАcceptTaskHandle;
+const osThreadAttr_t ModBusTCPSlaveАcceptTask_attributes = {
+  .name = "mbTCPАcceptTask",
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
 osThreadId_t ModBusSlaveTaskHandle;
 const osThreadAttr_t ModBusSlaveTask_attributes = {
-  .name = "ModBusSlaveTask",
+  .name = "mbSlaveTask",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -103,7 +149,7 @@ const osThreadAttr_t ModBusSlaveTask_attributes = {
 osThreadId_t BacnetTaskHandle;
 const osThreadAttr_t BacnetTask_attributes = {
   .name = "BacnetTask",
-  .stack_size = (256 + (MAX_APDU * 4)) * 4,
+  .stack_size = (512 + (MAX_APDU * 4)) * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -116,6 +162,7 @@ const osThreadAttr_t myHmiTask_attributes = {
 };
 
 extern BACNET_BINARY_PV Binary_Output_Level[/*MAX_BINARY_OUTPUTS*/][BACNET_MAX_PRIORITY];
+extern stModbusConn arrModbusConn[5];
 
 static HMI_TASK_ARG hmi_task_arg;
 
@@ -139,6 +186,9 @@ void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 static void MX_TIM9_Init_New(void);
+void ModBusTCPSlaveTask(void *argument);
+void ModBusSlaveTask(void *argument);
+void StartDefaultTask(void *argument);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -492,6 +542,51 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void MX_TIM9_Init_New(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 4;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 5000;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 2500;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+  /* USER CODE END TIM9_Init 2 */
+  HAL_TIM_MspPostInit(&htim9);
+}
+
 eMBErrorCode eMBRegDiscreteCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete)
 {	// MB_FUNC_READ_DISCRETE_INPUTS          ( 2 )
 	volatile eMBErrorCode eStatus = MB_ENOERR;
@@ -595,6 +690,12 @@ eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNReg
     if( ( usAddress >= REG_INPUT_START )
         && ( usAddress + usNRegs <= REG_INPUT_START + REG_INPUT_NREGS ) )
     {
+//    	usRegInputBuf[len_of_array(arrADC)]++;
+//    	for(int i = 0; i < len_of_array(arrADC); i++ )
+//    	{
+//    		usRegInputBuf[i] = arrADC[i];
+//    	}
+    	usRegInputBuf[0]++;
         iRegIndex = ( int )( usAddress - REG_INPUT_START );
         while( usNRegs > 0 )
         {
@@ -605,7 +706,6 @@ eMBErrorCode eMBRegInputCB(UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNReg
             iRegIndex++;
             usNRegs--;
         }
-        usRegInputBuf[0]++;
     }
     else
     {
@@ -622,7 +722,8 @@ eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 	/* Check if we have registers mapped at this block. */
 	if( (usAddress >= REG_HOLDING_START) &&
 		(usAddress + usNRegs <= REG_HOLDING_START + REG_HOLDING_NREGS)
-	) {
+	)
+	{
 		switch(eMode) {
 		case MB_REG_READ:
 //			uiModbusTimeOutCounter = 0;
@@ -634,11 +735,8 @@ eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 				--usNRegs;
 			}
 		 return MB_ENOERR;
-
-		/*
-		 	Update current register values.
-		 	MB_FUNC_WRITE_MULTIPLE_REGISTERS             (16)
-		*/
+		// Update current register values.
+		// MB_FUNC_WRITE_MULTIPLE_REGISTERS             (16)
 		case MB_REG_WRITE: {
 			uint16_t dac = uiRegHolding[4];
 			// Запазва текущия работен диапазон на ADC и DAC.
@@ -680,51 +778,72 @@ eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 	return MB_ENOREG;
 }
 
-uint8_t mb_rx_msg[600], mb_tx_msg[600];
-USHORT TCPLengthRX, TCPLengthTX;
-
 void ModBusTCPSlaveTask(void *argument)
 {
-	static struct netconn *conn, *newconn;
-	static struct netbuf *buf;
-	err_t err, accept_err;
+	stModbusConn *lpModbusConn = (stModbusConn *)argument;
 	eMBEventType eEvent;
+	struct netbuf *buf;
+
+	//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
+	netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
+	while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+	{
+		do
+		{
+			lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
+
+			eEvent = EV_FRAME_RECEIVED;
+			if( xQueueSend(lpModbusConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY) )
+			{
+				eMBEventType eEvent;
+				if( xMBPortEventGetTX(lpModbusConn, &eEvent) )
+				{
+					if( EV_FRAME_SENT == eEvent )
+					{
+						netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+					}
+				}
+			}
+
+			portYIELD();
+		} while( netbuf_next(buf) > 0 );
+		netbuf_delete(buf);
+	}
+
+	netconn_close(lpModbusConn->newconn);
+	netconn_delete(lpModbusConn->newconn);
+	lpModbusConn->newconn = NULL;
+
+	osThreadExit();
+}
+
+void ModBusTCPSlaveАcceptTask(void *argument)
+{
+	err_t err, accept_err;
+	struct netconn *conn;
+	int i = 0;
 
 	conn = netconn_new(NETCONN_TCP);
-	if( conn != NULL)
+	if( NULL != conn )
 	{
 		err = netconn_bind(conn, IP_ADDR_ANY, 502);
-		if (err == ERR_OK)
+		if( ERR_OK == err )
 		{
 			netconn_listen(conn);
 			while(1)
 			{
-				accept_err = netconn_accept(conn, &newconn);
-				if (accept_err == ERR_OK)
+				while( NULL != arrModbusConn[i].newconn )
 				{
-					netconn_set_recvtimeout(newconn, 5000);
-					while (netconn_recv(newconn, &buf) == ERR_OK)
+					if( ++i >= len_of_array(arrModbusConn) )
 					{
-						do
-						{
-							netbuf_copy(buf, mb_rx_msg, buf->p->tot_len);
-							TCPLengthRX = buf->p->tot_len;
-
-							eEvent = EV_FRAME_RECEIVED;
-							xMBPortEventPostRX(eEvent);
-							xMBPortEventGetTX(&eEvent);
-							if(EV_FRAME_SENT == eEvent)
-							{
-								netconn_write(newconn, mb_tx_msg, TCPLengthTX, NETCONN_COPY);
-							}
-							xMBPortEventPostRX(EV_READY);
-						} while (netbuf_next(buf) > 0);
-						netbuf_delete(buf);
-
-						usRS485PortLed[1] ^= 1;
+						vTaskDelay(5);
+						i = 0;
 					}
-					netconn_close(newconn);
-					netconn_delete(newconn);
+				}
+				accept_err = netconn_accept(conn, &arrModbusConn[i].newconn);
+				if( ERR_OK == accept_err )
+				{
+					osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
 				}
 			}
 		}
@@ -734,62 +853,17 @@ void ModBusTCPSlaveTask(void *argument)
 		}
 	}
 
-	vTaskDelete (NULL);
+	osThreadExit();
 }
 
 void ModBusSlaveTask(void *argument)
 {
 	for(;;)
 	{
-		eMBPoll();
+		//eMBPoll();
+		eMBPollTcp();
 		portYIELD();
 	}
-}
-
-static void MX_TIM9_Init_New(void)
-{
-
-  /* USER CODE BEGIN TIM9_Init 0 */
-
-  /* USER CODE END TIM9_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM9_Init 1 */
-
-  /* USER CODE END TIM9_Init 1 */
-  htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 4;
-  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 5000;
-  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim9) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 2500;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM9_Init 2 */
-  /* USER CODE END TIM9_Init 2 */
-  HAL_TIM_MspPostInit(&htim9);
-
 }
 /* USER CODE END 4 */
 
@@ -804,7 +878,7 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 	MX_LWIP_Init();
-	osThreadNew(ModBusTCPSlaveTask, NULL, &ModBusTCPSlaveTask_attributes);
+	osThreadNew(ModBusTCPSlaveАcceptTask, NULL, &ModBusTCPSlaveАcceptTask_attributes);
 	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
 	for(;;)
 	{
