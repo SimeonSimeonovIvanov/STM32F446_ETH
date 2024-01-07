@@ -2083,7 +2083,7 @@
  * SO_SNDTIMEO processing.
  */
 #if !defined LWIP_SO_SNDTIMEO || defined __DOXYGEN__
-#define LWIP_SO_SNDTIMEO                1
+#define LWIP_SO_SNDTIMEO                0
 #endif
 
 /**
@@ -2091,7 +2091,7 @@
  * SO_RCVTIMEO processing.
  */
 #if !defined LWIP_SO_RCVTIMEO || defined __DOXYGEN__
-#define LWIP_SO_RCVTIMEO                1
+#define LWIP_SO_RCVTIMEO                0
 #endif
 
 /**

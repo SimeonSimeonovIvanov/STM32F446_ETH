@@ -73,12 +73,12 @@ void vMBPortEventClose( void )
 	}
 }
 ///////////////////////////////////////////////////////////////////////////////
-BOOL xMBPortEventPostRX(eMBEventType eEvent)
+BOOL xMBPortEventPost(eMBEventType eEvent)
 {
 	return xQueueSend(lpMbConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY);
 }
 
-BOOL xMBPortEventGetRX(eMBEventType * peEvent)
+BOOL xMBPortEventGet(eMBEventType * peEvent)
 {
 	static uint8_t i = 0;
 	BOOL res = FALSE;

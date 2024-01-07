@@ -348,7 +348,7 @@ eMBPoll( void )
 
     /* Check if there is a event available. If not return control to caller.
      * Otherwise we will handle the event. */
-    if( xMBPortEventGetRX( &eEvent ) == TRUE )
+    if( xMBPortEventGet( &eEvent ) == TRUE )
     {
         switch ( eEvent )
         {
@@ -362,7 +362,7 @@ eMBPoll( void )
                 /* Check if the frame is for us. If not ignore the frame. */
                 if( ( ucRcvAddress == ucMBAddress ) || ( ucRcvAddress == MB_ADDRESS_BROADCAST ) )
                 {
-                    ( void )xMBPortEventPostRX( EV_EXECUTE );
+                    ( void )xMBPortEventPost( EV_EXECUTE );
                 }
             }
             break;
@@ -410,66 +410,117 @@ eMBPoll( void )
     return MB_ENOERR;
 }
 
-eMBErrorCode
-eMBPollTcp( void )
+eMBErrorCode eMBPollTcp( void )
 {
-    UCHAR   *ucMBFrame;
-    UCHAR    ucRcvAddress;
-    UCHAR    ucFunctionCode;
-    USHORT   usLength;
-    eMBException eException;
+	eMBErrorCode eStatus = MB_ENOERR;
+	eMBException eException;
+	eMBEventType eEvent;
+	UCHAR        *ucMBFrame;
+	UCHAR        ucRcvAddress;
+	UCHAR        ucFunctionCode;
+	USHORT       usLength;
 
-    int             i;
-    eMBErrorCode    eStatus = MB_ENOERR;
-    eMBEventType    eEvent;
+	if( STATE_ENABLED != eMBState )
+	{	/* Check if the protocol stack is ready. */
+		return MB_EILLSTATE;
+	}
 
-    /* Check if the protocol stack is ready. */
-    if( eMBState != STATE_ENABLED )
-    {
-        return MB_EILLSTATE;
-    }
-
-    /* Check if there is a event available. If not return control to caller.
-     * Otherwise we will handle the event. */
-    if( xMBPortEventGetRX( &eEvent ) == TRUE )
-    {
-        if( EV_FRAME_RECEIVED == eEvent )
-        {	/* Modbus TCP does not use any addresses. Fake the source address such
-             * that the processing part deals with this frame.
-             * ucRcvAddress == MB_TCP_PSEUDO_ADDRESS
-             */
-            eStatus = peMBFrameReceiveCur( &ucRcvAddress, &ucMBFrame, &usLength );
-            if( eStatus == MB_ENOERR )
-            {
-            	ucFunctionCode = ucMBFrame[MB_PDU_FUNC_OFF];
-            	eException = MB_EX_ILLEGAL_FUNCTION;
-            	for( i = 0; i < MB_FUNC_HANDLERS_MAX; i++ )
+	/* Check if there is a event available. If not return control to caller.
+	 * Otherwise we will handle the event. */
+	if( xMBPortEventGet( &eEvent ) == TRUE )
+	{
+		if( EV_FRAME_RECEIVED == eEvent )
+		{	/* Modbus TCP does not use any addresses. Fake the source address such
+		 	 * that the processing part deals with this frame.
+		 	 * ucRcvAddress == MB_TCP_PSEUDO_ADDRESS
+		 	 */
+			eStatus = peMBFrameReceiveCur( &ucRcvAddress, &ucMBFrame, &usLength );
+			if( MB_ENOERR == eStatus )
+			{
+				ucFunctionCode = ucMBFrame[MB_PDU_FUNC_OFF];
+				eException = MB_EX_ILLEGAL_FUNCTION;
+				for(uint8_t  i = 0; i < MB_FUNC_HANDLERS_MAX; i++ )
             	{	/* No more function handlers registered. Abort. */
-            		if( xFuncHandlers[i].ucFunctionCode == 0 )
-            		{
-            			break;
-            		}
-            		else if( xFuncHandlers[i].ucFunctionCode == ucFunctionCode )
-            		{
-            			eException = xFuncHandlers[i].pxHandler( ucMBFrame, &usLength );
-            			break;
-            		}
+					if( 0 == xFuncHandlers[i].ucFunctionCode )
+					{
+						break;
+					}
+					else if( xFuncHandlers[i].ucFunctionCode == ucFunctionCode )
+					{
+						eException = xFuncHandlers[i].pxHandler( ucMBFrame, &usLength );
+						break;
+					}
             	}
 
-            	if( eException != MB_EX_NONE )
+				if( MB_EX_NONE != eException )
 				{	/* An exception occured. Build an error frame. */
-            		usLength = 0;
-            		ucMBFrame[usLength++] = ( UCHAR )( ucFunctionCode | MB_FUNC_ERROR );
-            		ucMBFrame[usLength++] = eException;
-            	}
-            	eStatus = peMBFrameSendCur( ucRcvAddress, ucMBFrame, usLength );
-            }
-            else
-            {
-            	xMBTCPPortSendResponseNull();
-            }
-        }
-    }
+					usLength = 0;
+					ucMBFrame[usLength++] = ( UCHAR )( ucFunctionCode | MB_FUNC_ERROR );
+					ucMBFrame[usLength++] = eException;
+				}
+				eStatus = peMBFrameSendCur( ucRcvAddress, ucMBFrame, usLength );
+			}
+			else
+			{
+				xMBTCPPortSendResponseNull();
+			}
+		}
+	}
 
-    return MB_ENOERR;
+	return MB_ENOERR;
+}
+
+eMBErrorCode eMBNoPollTcp( stModbusConn *lpModbusConn )
+{
+	eMBException eException;
+	UCHAR        *ucMBFrame;
+	UCHAR        ucFunctionCode;
+	USHORT       usPID;
+
+	if( STATE_ENABLED != eMBState )
+	{	/* Check if the protocol stack is ready. */
+		return MB_EILLSTATE;
+	}
+
+	xMBTCPPortGetRequestNoPoll(lpModbusConn, &ucMBFrame, &lpModbusConn->len);
+    ///////////////////////////////////////////////////////////////////////////
+    // From mbtcp.c -> eMBTCPReceive(...)
+	usPID  = ucMBFrame[2/*MB_TCP_PID*/ + 0] << 8U;
+	usPID |= ucMBFrame[2/*MB_TCP_PID*/ + 1];
+	if( usPID == 0/*MB_TCP_PROTOCOL_ID*/ )
+	{
+		ucMBFrame = &ucMBFrame[7/*MB_TCP_FUNC*/];
+		lpModbusConn->len -= 7/*MB_TCP_FUNC*/;
+	///////////////////////////////////////////////////////////////////////////
+		ucFunctionCode = ucMBFrame[0/*MB_PDU_FUNC_OFF*/];
+		eException = MB_EX_ILLEGAL_FUNCTION;
+		for(uint8_t i = 0; i < MB_FUNC_HANDLERS_MAX; i++ )
+		{	/* No more function handlers registered. Abort. */
+			if( 0 == xFuncHandlers[i].ucFunctionCode )
+			{
+				break;
+			}
+			else if( xFuncHandlers[i].ucFunctionCode == ucFunctionCode )
+			{
+				extern osSemaphoreId_t myMbTCPSem01Handle;
+				xSemaphoreTake(myMbTCPSem01Handle, (TickType_t)portMAX_DELAY);
+				eException = xFuncHandlers[i].pxHandler( ucMBFrame, &lpModbusConn->len );
+				xSemaphoreGive(myMbTCPSem01Handle);
+				break;
+			}
+		}
+
+		if( MB_EX_NONE != eException )
+		{	/* An exception occured. Build an error frame. */
+			lpModbusConn->len = 0;
+			ucMBFrame[lpModbusConn->len++] = ( UCHAR )( ucFunctionCode | MB_FUNC_ERROR );
+			ucMBFrame[lpModbusConn->len++] = eException;
+		}
+
+		eMBTCPSendNoPoll(lpModbusConn, ucMBFrame, lpModbusConn->len );
+		return MB_ENOERR;
+	}
+
+	lpModbusConn->len = 0;
+	return MB_EIO;
 }

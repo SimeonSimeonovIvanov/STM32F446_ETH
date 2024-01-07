@@ -135,7 +135,7 @@ eMBASCIIStart( void )
     EXIT_CRITICAL_SECTION(  );
 
     /* No special startup required for ASCII. */
-    ( void )xMBPortEventPostRX( EV_READY );
+    ( void )xMBPortEventPost( EV_READY );
 }
 
 void
@@ -291,7 +291,7 @@ xMBASCIIReceiveFSM( void )
 
             /* Notify the caller of eMBASCIIReceive that a new frame
              * was received. */
-            xNeedPoll = xMBPortEventPostRX( EV_FRAME_RECEIVED );
+            xNeedPoll = xMBPortEventPost( EV_FRAME_RECEIVED );
         }
         else if( ucByte == ':' )
         {
@@ -387,7 +387,7 @@ xMBASCIITransmitFSM( void )
          * been sent. */
     case STATE_TX_NOTIFY:
         eSndState = STATE_TX_IDLE;
-        xNeedPoll = xMBPortEventPostRX( EV_FRAME_SENT );
+        xNeedPoll = xMBPortEventPost( EV_FRAME_SENT );
 
         /* Disable transmitter. This prevents another transmit buffer
          * empty interrupt. */

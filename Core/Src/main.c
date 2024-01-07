@@ -43,7 +43,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef StaticQueue_t osStaticMessageQDef_t;
+typedef StaticSemaphore_t osStaticSemaphoreDef_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -86,8 +87,16 @@ const osSemaphoreAttr_t myBinarySemSpi_attributes = {
   .name = "myBinarySemSpi"
 };
 /* USER CODE BEGIN PV */
+osSemaphoreId_t myMbTCPSem01Handle;
+osStaticSemaphoreDef_t myBinaryMbTCPSem01ControlBlock;
+const osSemaphoreAttr_t myBinaryMbTCPSem01_attributes = {
+  .name = "mbTCPSem01",
+  .cb_mem = &myBinaryMbTCPSem01ControlBlock,
+  .cb_size = sizeof(myBinaryMbTCPSem01ControlBlock),
+};
+
 static StaticTask_t ModBusTCPSlaveTaskCB[5];
-static StackType_t ModBusTCPSlaveTaskStk[5][250];
+static StackType_t ModBusTCPSlaveTaskStk[5][300];
 const osThreadAttr_t ModBusTCPSlaveTask_attributes[5] =
 {
 	{
@@ -135,7 +144,7 @@ const osThreadAttr_t ModBusTCPSlaveTask_attributes[5] =
 osThreadId_t ModBusTCPSlaveАcceptTaskHandle;
 const osThreadAttr_t ModBusTCPSlaveАcceptTask_attributes = {
   .name = "mbTCPАcceptTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -203,7 +212,6 @@ extern osSemaphoreId s_xSemaphore;
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -212,14 +220,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -255,7 +261,7 @@ int main(void)
   myBinarySemSpiHandle = osSemaphoreNew(1, 1, &myBinarySemSpi_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
+  myMbTCPSem01Handle = osSemaphoreNew(1, 1, &myBinaryMbTCPSem01_attributes);
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -804,7 +810,35 @@ void ModBusTCPSlaveTask(void *argument)
 					}
 				}
 			}
+			portYIELD();
+		} while( netbuf_next(buf) > 0 );
+		netbuf_delete(buf);
+	}
 
+	netconn_close(lpModbusConn->newconn);
+	netconn_delete(lpModbusConn->newconn);
+	lpModbusConn->newconn = NULL;
+
+	osThreadExit();
+}
+
+void ModBusTCPSlaveNoPollTask(void *argument)
+{
+	stModbusConn *lpModbusConn = (stModbusConn *)argument;
+	eMBEventType eEvent;
+	struct netbuf *buf;
+
+	//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
+	netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
+	while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+	{
+		do
+		{
+			lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
+			if( MB_ENOERR == eMBNoPollTcp(lpModbusConn) )
+			{
+				netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+			}
 			portYIELD();
 		} while( netbuf_next(buf) > 0 );
 		netbuf_delete(buf);
@@ -843,8 +877,10 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 				accept_err = netconn_accept(conn, &arrModbusConn[i].newconn);
 				if( ERR_OK == accept_err )
 				{
-					osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+//					osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+					osThreadNew(ModBusTCPSlaveNoPollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
 				}
+				portYIELD();
 			}
 		}
 		else
@@ -861,7 +897,7 @@ void ModBusSlaveTask(void *argument)
 	for(;;)
 	{
 		//eMBPoll();
-		eMBPollTcp();
+		//eMBPollTcp();
 		portYIELD();
 	}
 }

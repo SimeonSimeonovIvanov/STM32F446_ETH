@@ -22,6 +22,12 @@
 #ifndef _PORT_H
 #define _PORT_H
 
+#include <FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+#include <semphr.h>
+#include <cmsis_os2.h>
+
 #include <assert.h>
 #include <inttypes.h>
 
@@ -52,5 +58,17 @@ typedef int32_t LONG;
 #endif
 
 #define MB_TCP_BUF_SIZE     ( 256 + 7 ) /* Must hold a complete Modbus TCP frame. */
+
+typedef struct
+{
+	struct netconn *newconn;
+	xQueueHandle xQueueMbRX;
+	xQueueHandle xQueueMbTX;
+	uint16_t len;
+
+	uint8_t  aucTCPBuf[MB_TCP_BUF_SIZE];
+	uint16_t usTCPFrameBytesLeft;
+	uint16_t usTCPBufPos;
+} stModbusConn;
 
 #endif

@@ -30,17 +30,15 @@
 #ifndef _MB_PORT_H
 #define _MB_PORT_H
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-
 #ifdef __cplusplus
 PR_BEGIN_EXTERN_C
 #endif
+
 /* ----------------------- Type definitions ---------------------------------*/
+
 typedef enum
 {
-	EV_READY,                   /*!< Startup finished. */
+    EV_READY,                   /*!< Startup finished. */
     EV_FRAME_RECEIVED,          /*!< Frame received. */
     EV_EXECUTE,                 /*!< Execute function. */
     EV_FRAME_SENT               /*!< Frame sent. */
@@ -60,43 +58,41 @@ typedef enum
     MB_PAR_EVEN                 /*!< Even parity. */
 } eMBParity;
 
-typedef struct
-{
-	struct netconn *newconn;
-	xQueueHandle xQueueMbRX;
-	xQueueHandle xQueueMbTX;
-	uint16_t len;
-
-	uint8_t  aucTCPBuf[MB_TCP_BUF_SIZE];
-	uint16_t usTCPFrameBytesLeft;
-	uint16_t usTCPBufPos;
-} stModbusConn;
 /* ----------------------- Supporting functions -----------------------------*/
-BOOL xMBPortEventInit(void);
+BOOL            xMBPortEventInit( void );
 
-BOOL xMBPortEventPostRX(eMBEventType eEvent);
-BOOL xMBPortEventGetRX(eMBEventType * eEvent);
+BOOL            xMBPortEventPost( eMBEventType eEvent );
 
-BOOL xMBPortEventPostTX(stModbusConn *lpMbConn, eMBEventType eEvent);
-BOOL xMBPortEventGetTX(stModbusConn *lpMbConn, eMBEventType *peEvent);
+BOOL            xMBPortEventGet(  /*@out@ */ eMBEventType * eEvent );
+
 /* ----------------------- Serial port functions ----------------------------*/
-BOOL xMBPortSerialInit
-(
-	UCHAR ucPort, ULONG ulBaudRate,
-	UCHAR ucDataBits, eMBParity eParity
-);
-void vMBPortClose(void);
-void xMBPortSerialClose( void);
-void vMBPortSerialEnable(BOOL xRxEnable, BOOL xTxEnable);
-BOOL xMBPortSerialGetByte(CHAR * pucByte);
-BOOL xMBPortSerialPutByte(CHAR ucByte);
+
+BOOL            xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate,
+                                   UCHAR ucDataBits, eMBParity eParity );
+
+void            vMBPortClose( void );
+
+void            xMBPortSerialClose( void );
+
+void            vMBPortSerialEnable( BOOL xRxEnable, BOOL xTxEnable );
+
+BOOL            xMBPortSerialGetByte( CHAR * pucByte );
+
+BOOL            xMBPortSerialPutByte( CHAR ucByte );
+
 /* ----------------------- Timers functions ---------------------------------*/
-BOOL xMBPortTimersInit(USHORT usTimeOut50us);
-void xMBPortTimersClose(void);
-void vMBPortTimersEnable(void);
-void vMBPortTimersDisable(void);
-void vMBPortTimersDelay(USHORT usTimeOutMS);
+BOOL            xMBPortTimersInit( USHORT usTimeOut50us );
+
+void            xMBPortTimersClose( void );
+
+void            vMBPortTimersEnable( void );
+
+void            vMBPortTimersDisable( void );
+
+void            vMBPortTimersDelay( USHORT usTimeOutMS );
+
 /* ----------------------- Callback for the protocol stack ------------------*/
+
 /*!
  * \brief Callback function for the porting layer when a new byte is
  *   available.
@@ -109,15 +105,25 @@ void vMBPortTimersDelay(USHORT usTimeOutMS);
  *   a new byte was received. The port implementation should wake up the
  *   tasks which are currently blocked on the eventqueue.
  */
-extern BOOL (*pxMBFrameCBByteReceived)(void);
-extern BOOL (*pxMBFrameCBTransmitterEmpty)(void);
-extern BOOL (*pxMBPortCBTimerExpired)(void);
+extern          BOOL( *pxMBFrameCBByteReceived ) ( void );
+
+extern          BOOL( *pxMBFrameCBTransmitterEmpty ) ( void );
+
+extern          BOOL( *pxMBPortCBTimerExpired ) ( void );
+
 /* ----------------------- TCP port functions -------------------------------*/
-BOOL xMBTCPPortInit(USHORT usTCPPort);
-void vMBTCPPortClose(void);
-void vMBTCPPortDisable(void);
-BOOL xMBTCPPortGetRequest(UCHAR **ppucMBTCPFrame, USHORT * usTCPLength);
-BOOL xMBTCPPortSendResponse(const UCHAR *pucMBTCPFrame, USHORT usTCPLength);
+BOOL            xMBTCPPortInit( USHORT usTCPPort );
+
+void            vMBTCPPortClose( void );
+
+void            vMBTCPPortDisable( void );
+
+BOOL            xMBTCPPortGetRequest( UCHAR **ppucMBTCPFrame, USHORT * usTCPLength );
+
+BOOL            xMBTCPPortSendResponse( const UCHAR *pucMBTCPFrame, USHORT usTCPLength );
+
+BOOL            xMBTCPPortSendResponseNull(void);
+
 #ifdef __cplusplus
 PR_END_EXTERN_C
 #endif

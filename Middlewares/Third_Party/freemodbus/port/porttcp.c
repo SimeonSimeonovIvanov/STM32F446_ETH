@@ -64,7 +64,7 @@ void vMBTCPPortClose(void)
 void vMBTCPPortDisable(void)
 {
 }
-
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 BOOL xMBTCPPortGetRequest(UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength)
 {
 	if(NULL == lpMbConn)
@@ -95,7 +95,34 @@ BOOL xMBTCPPortSendResponse(const UCHAR * pucMBTCPFrame, USHORT usTCPLength)
 
 	return TRUE;
 }
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+eMBErrorCode xMBTCPPortGetRequestNoPoll(stModbusConn *lpMbConn1, UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength)
+{
+    *ppucMBTCPFrame = &lpMbConn1->aucTCPBuf[0];
+    *usTCPLength = lpMbConn1->len;
+    /* Reset the buffer. */
+    lpMbConn1->usTCPBufPos = 0;
+    lpMbConn1->usTCPFrameBytesLeft = MB_TCP_FUNC;
+    return MB_ENOERR;
+}
 
+eMBErrorCode eMBTCPSendNoPoll(stModbusConn *lpMbConn, const UCHAR * pucFrame, USHORT usLength )
+{	// From mbtcp.c -> eMBTCPSend(...)
+    eMBErrorCode eStatus = MB_ENOERR;
+    UCHAR        *pucMBTCPFrame = ( UCHAR * ) pucFrame - MB_TCP_FUNC;
+    USHORT       usTCPLength = usLength + MB_TCP_FUNC;
+    /* The MBAP header is already initialized because the caller calls this
+     * function with the buffer returned by the previous call. Therefore we
+     * only have to update the length in the header. Note that the length
+     * header includes the size of the Modbus PDU and the UID Byte. Therefore
+     * the length is usLength plus one.
+     */
+    pucMBTCPFrame[MB_TCP_LEN] = ( usLength + 1 ) >> 8U;
+    pucMBTCPFrame[MB_TCP_LEN + 1] = ( usLength + 1 ) & 0xFF;
+    lpMbConn->len = usTCPLength;
+    return eStatus;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 BOOL xMBTCPPortSendResponseNull(void)
 {
 	if(NULL == lpMbConn)
