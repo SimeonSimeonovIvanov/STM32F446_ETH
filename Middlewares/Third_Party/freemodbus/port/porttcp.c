@@ -42,10 +42,10 @@
 #define EV_CLIENT           1
 #define EV_NEVENTS          EV_CLIENT + 1
 /* ----------------------- External variables -------------------------------*/
-stModbusConn arrModbusConn[5];
-stModbusConn *lpMbConn;
-/* ----------------------- Static variables ---------------------------------*/
 
+/* ----------------------- Static variables ---------------------------------*/
+stModbusConn arrModbusConn[NUMBER_OF_MB_MASTER_TCP_CONN];
+stModbusConn *lpMbConn;
 /* ----------------------- External functions -------------------------------*/
 
 /* ----------------------- Static functions ---------------------------------*/

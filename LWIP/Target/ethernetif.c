@@ -18,25 +18,23 @@
   */
 
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
-#include "lwip/opt.h"
+#include <string.h>
 
+#include "main.h"
+#include "cmsis_os.h"
+#include "semphr.h"
+
+#include "lwip/opt.h"
 #include "lwip/timeouts.h"
 #include "netif/ethernet.h"
 #include "netif/etharp.h"
 #include "lwip/ethip6.h"
 #include "ethernetif.h"
-#include <string.h>
-#include "cmsis_os.h"
+
 #include "lwip/tcpip.h"
+#include "priv/tcpip_priv.h"
 
 #include "../../lwip/Target/enc424j600/enc424j600.h"
-
-#include "cmsis_os.h"
-#include "semphr.h"
-
-#define TIME_WAITING_FOR_INPUT ( portMAX_DELAY )
-#define INTERFACE_THREAD_STACK_SIZE ( 1024 )
 
 /* Network interface name */
 #define IFNAME0 's'
@@ -48,15 +46,24 @@ __ALIGN_BEGIN uint8_t Rx_Buff[ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive 
 //__ALIGN_BEGIN uint8_t Tx_Buff[ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
 
 /* Semaphore to signal incoming packets */
-osSemaphoreId s_xSemaphore = NULL;
-
-void HAL_ETH_RxCpltCallback(void)
-{
-	osSemaphoreRelease(s_xSemaphore);
-}
+osSemaphoreId RxPktSemaphore = NULL;
 /*******************************************************************************
                        LL Driver Interface ( LwIP stack --> ETH)
 *******************************************************************************/
+static StaticTask_t  Ethernetif_InputTaskCB;
+static StackType_t   Ethernetif_InputTaskStk[512];
+const osThreadAttr_t Ethernetif_InputTask_attributes =
+{
+	.name       = "EthIf",
+	.cb_mem     = &Ethernetif_InputTaskCB,
+	.cb_size    = sizeof(Ethernetif_InputTaskCB),
+	.stack_mem  = &Ethernetif_InputTaskStk,
+	.stack_size = sizeof(Ethernetif_InputTaskStk),
+	.priority   = (osPriority_t) osPriorityNormal,
+};
+
+static struct tcpip_api_call_data tcpip_api_call_dhcp_start_data;
+
 /**
  * In this function, the hardware should be initialized.
  * Called from ethernetif_init().
@@ -66,10 +73,9 @@ void HAL_ETH_RxCpltCallback(void)
  */
 static void low_level_init(struct netif *netif)
 {
-	uint8_t status, MACAddr[6] = { 0 };
-	osThreadAttr_t attributes;
+	uint8_t MACAddr[6] = { 0 };
 
-	status = enc424j600Init( MACAddr );if (0 == status)
+	if( 0 == enc424j600Init(MACAddr) )
 	{	/* Set netif link flag */
 		netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
 	}
@@ -89,24 +95,16 @@ static void low_level_init(struct netif *netif)
 	netif->mtu = 1500;
 	/* Accept broadcast address and ARP traffic */
 	/* don't set NETIF_FLAG_ETHARP if this device is not an ethernet one */
-  #if LWIP_ARP
+#if LWIP_ARP
 	netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
-  #else
-    netif->flags |= NETIF_FLAG_BROADCAST;
-  #endif /* LWIP_ARP */
-    /* create a binary semaphore used for informing ethernetif of frame reception */
-    s_xSemaphore = osSemaphoreNew(1, 1, NULL);
-    /* create the task that handles the ETH_MAC */
-    memset(&attributes, 0x0, sizeof(osThreadAttr_t));
-    attributes.name = "EthIf";
-    attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
-    attributes.priority = osPriorityRealtime;
-    osThreadNew(ethernetif_input, netif, &attributes);
+#else
+	netif->flags |= NETIF_FLAG_BROADCAST;
+#endif /* LWIP_ARP */
+	/* create a binary semaphore used for informing ethernetif of frame reception */
+	RxPktSemaphore = osSemaphoreNew(1, 1, NULL);
+	/* create the task that handles the ETH_MAC */
+	osThreadNew(ethernetif_input, netif, &Ethernetif_InputTask_attributes);
 #endif /* LWIP_ARP || LWIP_ETHERNET */
-    netif_set_up(netif);
-    netif_set_link_up(netif);
-
-    httpd_init();
 }
 
 /**
@@ -280,11 +278,7 @@ void ethernetif_input(void* argument)
 
 	for( ;; )
 	{
-		if( osSemaphoreAcquire(s_xSemaphore, TIME_WAITING_FOR_INPUT) != osOK )
-		{
-			continue;
-		}
-
+		osSemaphoreAcquire(RxPktSemaphore, portMAX_DELAY);
 		do
 		{
 			LOCK_TCPIP_CORE();
@@ -337,19 +331,16 @@ static err_t low_level_output_arp_off(struct netif *netif, struct pbuf *q, const
 err_t ethernetif_init(struct netif *netif)
 {
   LWIP_ASSERT("netif != NULL", (netif != NULL));
-
 #if LWIP_NETIF_HOSTNAME
   /* Initialize interface hostname */
   netif->hostname = "lwip";
 #endif /* LWIP_NETIF_HOSTNAME */
-
   netif->name[0] = IFNAME0;
   netif->name[1] = IFNAME1;
   /* We directly use etharp_output() here to save a function call.
    * You can instead declare your own function an call etharp_output()
    * from it if you have to do some checks before sending (e.g. if link
    * is available...) */
-
 #if LWIP_IPV4
 #if LWIP_ARP || LWIP_ETHERNET
 #if LWIP_ARP
@@ -360,16 +351,12 @@ err_t ethernetif_init(struct netif *netif)
 #endif /* LWIP_ARP */
 #endif /* LWIP_ARP || LWIP_ETHERNET */
 #endif /* LWIP_IPV4 */
-
 #if LWIP_IPV6
   netif->output_ip6 = ethip6_output;
 #endif /* LWIP_IPV6 */
-
   netif->linkoutput = low_level_output;
-
   /* initialize the hardware */
   low_level_init(netif);
-
   return ERR_OK;
 }
 
@@ -397,49 +384,40 @@ u32_t sys_now(void)
   return HAL_GetTick();
 }
 
-/* USER CODE END 6 */
+err_t tcpip_api_call_dhcp_start(struct tcpip_api_call_data *call)
+{
+	extern struct netif gnetif;
+	dhcp_start(&gnetif);
+	return ERR_OK;
+}
 
-/**
-  * @brief  This function sets the netif link status.
-  * @param  netif: the network interface
-  * @retval None
-  */
 void ethernetif_set_link(void* argument)
 {
 	struct link_str *link_arg = (struct link_str *)argument;
-	uint32_t regvalue = 0;
+	uint32_t is_link_up;
 
 	for(;;)
 	{
-		if( xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY ) == pdTRUE )
-		{
-			if( enc424j600MACIsLinked() )
-			{
-				regvalue = 1;
-			} else {
-				regvalue = 0;
-			}
-			xSemaphoreGive( myBinarySemSpiHandle );
-		}
+		osDelay(500);
 
+		xSemaphoreTake( myBinarySemSpiHandle, (TickType_t)portMAX_DELAY );
+		is_link_up = enc424j600MACIsLinked();
+		xSemaphoreGive( myBinarySemSpiHandle );
+
+		osSemaphoreAcquire(link_arg->semaphore, osWaitForever);
 		/* Check whether the netif link down and the PHY link is up */
-		if(!netif_is_link_up(link_arg->netif) && regvalue)
+		if( !netif_is_link_up(link_arg->netif) && is_link_up )
 		{	/* network cable is connected */
 			netif_set_up(link_arg->netif);
 			netif_set_link_up(link_arg->netif);
-
-//#ifdef USE_DHCP
-			extern struct netif gnetif;
-  dhcp_start(&gnetif);
-//#endif
-		}
-		else if(netif_is_link_up(link_arg->netif) && !regvalue)
+			tcpip_api_call(tcpip_api_call_dhcp_start, &tcpip_api_call_dhcp_start_data);
+		} else
+		if( netif_is_link_up(link_arg->netif) && !is_link_up )
 		{	/* network cable is dis-connected */
 			netif_set_down(link_arg->netif);
 			netif_set_link_down(link_arg->netif);
 		}
-
-		osDelay(200);
+		osSemaphoreRelease(link_arg->semaphore);
 	}
 }
 
@@ -452,22 +430,16 @@ void ethernetif_set_link(void* argument)
   */
 void ethernetif_update_config(struct netif *netif)
 {
-  __IO uint32_t tickstart = 0;
-  uint32_t regvalue = 0;
-
-  if(netif_is_link_up(netif))
-  {
-	uint8_t MACAddr[6];
-	//enc424j600Init( MACAddr );
-
-  }
-  else
-  {
-    /* Stop MAC interface */
-    //HAL_ETH_Stop(&heth);
-  }
-
-  ethernetif_notify_conn_changed(netif);
+	if(netif_is_link_up(netif))
+	{
+		//uint8_t MACAddr[6];
+		//enc424j600Init( MACAddr );
+	}
+	else
+	{	/* Stop MAC interface */
+		//HAL_ETH_Stop(&heth);
+	}
+	ethernetif_notify_conn_changed(netif);
 }
 
 /* USER CODE BEGIN 8 */
@@ -481,13 +453,5 @@ __weak void ethernetif_notify_conn_changed(struct netif *netif)
   /* NOTE : This is function could be implemented in user file
             when the callback is needed,
   */
-
 }
-/* USER CODE END 8 */
 #endif /* LWIP_NETIF_LINK_CALLBACK */
-
-/* USER CODE BEGIN 9 */
-
-/* USER CODE END 9 */
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
-

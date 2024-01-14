@@ -37,7 +37,7 @@
 #include "mb.h"
 #include "mbport.h"
 /* ----------------------- Variables ----------------------------------------*/
-extern stModbusConn arrModbusConn[5];
+extern stModbusConn arrModbusConn[NUMBER_OF_MB_MASTER_TCP_CONN];
 extern stModbusConn *lpMbConn;
 /* ----------------------- Start implementation -----------------------------*/
 BOOL xMBPortEventInit( void )

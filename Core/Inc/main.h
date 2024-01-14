@@ -71,6 +71,9 @@ void Error_Handler(void);
 #define UART4_RTS_Pin GPIO_PIN_15
 #define UART4_RTS_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
+#define NUMBER_OF_MB_MASTER_TCP_CONN	4
+#define NUMBER_OF_ADC_CHANNEL			4
+
 #define len_of_array( arr )			( sizeof( arr ) / sizeof( *arr ) )
 /* USER CODE END Private defines */
 

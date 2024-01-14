@@ -42,7 +42,7 @@ void HmiTask( void *argument )
 		hmiSetLeds( arg->lpRS485PortLed[0], 37, 1 );
 		hmiSetLeds( arg->lpRS485PortLed[1], 38, 1 );
 		hmiUpdateLeds();
-		osDelay(2);
+		osDelay(10);
 	}
 }
 
