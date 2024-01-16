@@ -189,7 +189,7 @@ const osThreadAttr_t ModBusTCPSlaveTask_attributes[NUMBER_OF_MB_MASTER_TCP_CONN]
 };
 
 static StaticTask_t  ModBusTCPSlaveАcceptTaskCB;
-static StackType_t   ModBusTCPSlaveАcceptTaskStk[512];
+static StackType_t   ModBusTCPSlaveАcceptTaskStk[300];
 const osThreadAttr_t ModBusTCPSlaveАcceptTask_attributes =
 {
 	.name       = "mbTCPSАcceptTask",
@@ -904,6 +904,7 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 	netconn_delete(lpModbusConn->newconn);
 	lpModbusConn->newconn = NULL;
 
+	osThreadTerminate(osThreadGetId());
 	osThreadExit();
 }
 
@@ -938,10 +939,7 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 				}
 			}
 		}
-		else
-		{
-			netconn_delete(conn);
-		}
+		netconn_delete(conn);
 	}
 
 	osThreadExit();

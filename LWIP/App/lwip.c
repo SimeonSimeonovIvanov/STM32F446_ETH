@@ -50,15 +50,24 @@ ip4_addr_t ipaddr;
 ip4_addr_t netmask;
 ip4_addr_t gw;
 
-static osThreadAttr_t attributes;
-static struct link_str link_arg; // Ethernet link thread Argument
+static struct link_str myLinkTask_arg;
+static uint32_t myLinkTaskBuffer[256];
+static StaticTask_t myLinkTaskControlBlock;
+static const osThreadAttr_t myLinkTask_attributes =
+{
+  .name = "myLinkTaskTask",
+  .cb_mem = &myLinkTaskControlBlock,
+  .cb_size = sizeof(myLinkTaskControlBlock),
+  .stack_mem = &myLinkTaskBuffer[0],
+  .stack_size = sizeof(myLinkTaskBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
+};
 
 void MX_LWIP_Init(void)
-{	/* Initilialize the LwIP stack with RTOS */
+{
 	tcpip_init( NULL, NULL );
 	LOCK_TCPIP_CORE();
 #if LWIP_DHCP
-	/* IP addresses initialization with DHCP (IPv4) */
 	ipaddr.addr = 0;
 	netmask.addr = 0;
 	gw.addr = 0;
@@ -76,17 +85,9 @@ void MX_LWIP_Init(void)
 	netif_set_addr(&gnetif, &ipaddr, &netmask, &gw);
 	/* Set the link callback function, this function is called on change of link status*/
 	netif_set_link_callback(&gnetif, ethernetif_update_config);
-	httpd_init();
-#if LWIP_DHCP
-	//dhcp_start(&gnetif);
-#endif /* LWIP_DHCP */
 	/* Create the Ethernet link handler thread */
-	link_arg.netif = &gnetif;
-	link_arg.semaphore = osSemaphoreNew(1, 1, NULL);
-	memset(&attributes, 0x0, sizeof(osThreadAttr_t));
-	attributes.name = "LinkThr";
-	attributes.stack_size = 2048;
-	attributes.priority = osPriorityNormal;
-	osThreadNew(ethernetif_set_link, &link_arg, &attributes);
+	myLinkTask_arg.netif = &gnetif;
+	myLinkTask_arg.semaphore = osSemaphoreNew(1, 1, NULL);
+	osThreadNew(ethernetif_set_link, &myLinkTask_arg, &myLinkTask_attributes);
 	UNLOCK_TCPIP_CORE();
 }

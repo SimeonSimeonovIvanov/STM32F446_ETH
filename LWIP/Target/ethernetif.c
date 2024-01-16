@@ -51,7 +51,7 @@ osSemaphoreId RxPktSemaphore = NULL;
                        LL Driver Interface ( LwIP stack --> ETH)
 *******************************************************************************/
 static StaticTask_t  Ethernetif_InputTaskCB;
-static StackType_t   Ethernetif_InputTaskStk[512];
+static StackType_t   Ethernetif_InputTaskStk[256];
 const osThreadAttr_t Ethernetif_InputTask_attributes =
 {
 	.name       = "EthIf",
@@ -63,6 +63,7 @@ const osThreadAttr_t Ethernetif_InputTask_attributes =
 };
 
 static struct tcpip_api_call_data tcpip_api_call_dhcp_start_data;
+static struct tcpip_api_call_data tcpip_api_call_httpd_init_data;
 
 /**
  * In this function, the hardware should be initialized.
@@ -391,10 +392,18 @@ err_t tcpip_api_call_dhcp_start(struct tcpip_api_call_data *call)
 	return ERR_OK;
 }
 
+err_t tcpip_api_call_httpd_init(struct tcpip_api_call_data *call)
+{
+	httpd_init();
+	return ERR_OK;
+}
+
 void ethernetif_set_link(void* argument)
 {
 	struct link_str *link_arg = (struct link_str *)argument;
 	uint32_t is_link_up;
+
+	//tcpip_api_call(tcpip_api_call_httpd_init, &tcpip_api_call_httpd_init_data);
 
 	for(;;)
 	{
@@ -420,14 +429,7 @@ void ethernetif_set_link(void* argument)
 		osSemaphoreRelease(link_arg->semaphore);
 	}
 }
-
 #if LWIP_NETIF_LINK_CALLBACK
-/**
-  * @brief  Link callback function, this function is called on change of link status
-  *         to update low level driver configuration.
-* @param  netif: The network interface
-  * @retval None
-  */
 void ethernetif_update_config(struct netif *netif)
 {
 	if(netif_is_link_up(netif))
@@ -442,12 +444,6 @@ void ethernetif_update_config(struct netif *netif)
 	ethernetif_notify_conn_changed(netif);
 }
 
-/* USER CODE BEGIN 8 */
-/**
-  * @brief  This function notify user about link status changement.
-  * @param  netif: the network interface
-  * @retval None
-  */
 __weak void ethernetif_notify_conn_changed(struct netif *netif)
 {
   /* NOTE : This is function could be implemented in user file
