@@ -65,6 +65,7 @@ typedef struct
 	xQueueHandle xQueueMbRX;
 	xQueueHandle xQueueMbTX;
 	uint16_t len;
+	void *hTask;
 
 	uint8_t  aucTCPBuf[MB_TCP_BUF_SIZE];
 	uint16_t usTCPFrameBytesLeft;

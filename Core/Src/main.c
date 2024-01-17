@@ -847,36 +847,42 @@ void ModBusTCPSlaveTask(void *argument)
 	eMBEventType eEvent;
 	struct netbuf *buf;
 
-	//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
-	netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
-	while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+	while(1)
 	{
-		do
+		if( NULL == lpModbusConn->newconn )
 		{
-			lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
+			vTaskSuspend(lpModbusConn->hTask/*NULL*/);
+		}
 
-			eEvent = EV_FRAME_RECEIVED;
-			if( xQueueSend(lpModbusConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY) )
+		//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
+		netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
+		while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+		{
+			do
 			{
-				eMBEventType eEvent = EV_READY;
-				if( xMBPortEventGetTX(lpModbusConn, &eEvent) )
+				lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
+
+				eEvent = EV_FRAME_RECEIVED;
+				if( xQueueSend(lpModbusConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY) )
 				{
-					if( EV_FRAME_SENT == eEvent )
+					eMBEventType eEvent = EV_READY;
+					if( xMBPortEventGetTX(lpModbusConn, &eEvent) )
 					{
-						netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+						if( EV_FRAME_SENT == eEvent )
+						{
+							netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+						}
 					}
 				}
-			}
-		} while( netbuf_next(buf) > 0 );
-		netbuf_delete(buf);
-		portYIELD();
+			} while( netbuf_next(buf) > 0 );
+			netbuf_delete(buf);
+			portYIELD();
+		}
+
+		netconn_close(lpModbusConn->newconn);
+		netconn_delete(lpModbusConn->newconn);
+		lpModbusConn->newconn = NULL;
 	}
-
-	netconn_close(lpModbusConn->newconn);
-	netconn_delete(lpModbusConn->newconn);
-	lpModbusConn->newconn = NULL;
-
-	osThreadExit();
 }
 
 void ModBusTCPSlaveNoPollTask(void *argument)
@@ -884,35 +890,47 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 	stModbusConn *lpModbusConn = (stModbusConn *)argument;
 	struct netbuf *buf;
 
-	//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
-	netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
-	while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+	while(1)
 	{
-		do
+		if( NULL == lpModbusConn->newconn )
 		{
-			lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
-			if( MB_ENOERR == eMBNoPollTcp(lpModbusConn) )
+			vTaskSuspend(lpModbusConn->hTask/*NULL*/);
+		}
+
+		//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
+		netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
+		while( ERR_OK == netconn_recv(lpModbusConn->newconn, &buf) )
+		{
+			do
 			{
-				netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
-			}
-		} while( netbuf_next(buf) > 0 );
-		netbuf_delete(buf);
-		portYIELD();
+				lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
+				if( MB_ENOERR == eMBNoPollTcp(lpModbusConn) )
+				{
+					netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+				}
+			} while( netbuf_next(buf) > 0 );
+			netbuf_delete(buf);
+			portYIELD();
+		}
+
+		netconn_close(lpModbusConn->newconn);
+		netconn_delete(lpModbusConn->newconn);
+		lpModbusConn->newconn = NULL;
 	}
-
-	netconn_close(lpModbusConn->newconn);
-	netconn_delete(lpModbusConn->newconn);
-	lpModbusConn->newconn = NULL;
-
-	osThreadTerminate(osThreadGetId());
-	osThreadExit();
 }
 
 void ModBusTCPSlaveАcceptTask(void *argument)
 {
 	err_t err, accept_err;
 	struct netconn *conn;
-	int i = 0;
+	int i;
+
+	for( i = 0; i < len_of_array(arrModbusConn); i++ )
+	{
+		arrModbusConn[i].newconn = NULL;
+//		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlaveNoPollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+	}
 
 	conn = netconn_new(NETCONN_TCP);
 	if( NULL != conn )
@@ -923,7 +941,8 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 			netconn_listen(conn);
 			while(1)
 			{
-				while( NULL != arrModbusConn[i].newconn )
+				i = 0;
+				while( (NULL != arrModbusConn[i].newconn) )//|| (eSuspended != eTaskGetState(arrModbusConn[i].hTask)))
 				{
 					if( ++i >= len_of_array(arrModbusConn) )
 					{
@@ -934,8 +953,9 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 				accept_err = netconn_accept(conn, &arrModbusConn[i].newconn);
 				if( ERR_OK == accept_err )
 				{
-//					osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
-					osThreadNew(ModBusTCPSlaveNoPollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+					vTaskResume(arrModbusConn[i].hTask);
+				} else {
+					arrModbusConn[i].newconn = NULL;
 				}
 			}
 		}
