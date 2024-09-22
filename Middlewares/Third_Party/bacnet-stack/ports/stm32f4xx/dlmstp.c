@@ -43,8 +43,6 @@
 #include "bacnet/datalink/mstpdef.h"
 #include "rs485.h"
 #include "bacnet/npdu.h"
-#include "bacnet/bits.h"
-#include "bacnet/bytes.h"
 #include "bacnet/bacaddr.h"
 #include "bacnet/basic/sys/ringbuf.h"
 #include "bacnet/basic/sys/mstimer.h"
