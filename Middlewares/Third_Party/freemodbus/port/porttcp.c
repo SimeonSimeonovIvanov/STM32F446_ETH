@@ -23,6 +23,7 @@
 
 #include "main.h"
 #include "port.h"
+#include "api.h"
 /* ----------------------- Modbus includes ----------------------------------*/
 #include "mb.h"
 #include "mbport.h"
@@ -84,53 +85,48 @@ BOOL xMBTCPPortGetRequest(UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength)
 
 BOOL xMBTCPPortSendResponse(const UCHAR * pucMBTCPFrame, USHORT usTCPLength)
 {
+	eMBEventType eEvent = EV_READY;
+
 	if(NULL == lpMbConn)
 	{
-		xMBPortEventPostTX(lpMbConn, EV_READY);
 		return FALSE;
 	}
 
 	lpMbConn->len = usTCPLength;
-	xMBPortEventPostTX(lpMbConn, EV_FRAME_SENT);
+	if( lpMbConn->len )
+	{
+		netconn_write(lpMbConn->newconn, lpMbConn->aucTCPBuf, lpMbConn->len, NETCONN_COPY);
+		eEvent = EV_FRAME_SENT;
+	}
+	xQueueSend(lpMbConn->xQueueMbTX, (const void *)&eEvent, portMAX_DELAY);
 
 	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-eMBErrorCode xMBTCPPortGetRequestNoPoll(stModbusConn *lpMbConn1, UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength)
+BOOL xMBTCPPortGetRequestNoPoll(stModbusConn *lpMbConn1, UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength)
 {
-    *ppucMBTCPFrame = &lpMbConn1->aucTCPBuf[0];
-    *usTCPLength = lpMbConn1->len;
-    /* Reset the buffer. */
-    lpMbConn1->usTCPBufPos = 0;
-    lpMbConn1->usTCPFrameBytesLeft = MB_TCP_FUNC;
-    return MB_ENOERR;
-}
-
-eMBErrorCode eMBTCPSendNoPoll(stModbusConn *lpMbConn, const UCHAR * pucFrame, USHORT usLength )
-{	// From mbtcp.c -> eMBTCPSend(...)
-    eMBErrorCode eStatus = MB_ENOERR;
-    UCHAR        *pucMBTCPFrame = ( UCHAR * ) pucFrame - MB_TCP_FUNC;
-    USHORT       usTCPLength = usLength + MB_TCP_FUNC;
-    /* The MBAP header is already initialized because the caller calls this
-     * function with the buffer returned by the previous call. Therefore we
-     * only have to update the length in the header. Note that the length
-     * header includes the size of the Modbus PDU and the UID Byte. Therefore
-     * the length is usLength plus one.
-     */
-    pucMBTCPFrame[MB_TCP_LEN] = ( usLength + 1 ) >> 8U;
-    pucMBTCPFrame[MB_TCP_LEN + 1] = ( usLength + 1 ) & 0xFF;
-    lpMbConn->len = usTCPLength;
-    return eStatus;
-}
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-BOOL xMBTCPPortSendResponseNull(void)
-{
-	if(NULL == lpMbConn)
-	{
-		return FALSE;
-	}
-
-	xMBPortEventPostTX(lpMbConn, EV_READY);
-
+	*ppucMBTCPFrame = &lpMbConn1->aucTCPBuf[0];
+	*usTCPLength = lpMbConn1->len;
+	/* Reset the buffer. */
+	lpMbConn1->usTCPBufPos = 0;
+	lpMbConn1->usTCPFrameBytesLeft = MB_TCP_FUNC;
 	return TRUE;
 }
+
+BOOL eMBTCPSendNoPoll(stModbusConn *lpMbConn1, const UCHAR * pucFrame, USHORT usLength )
+{	// From mbtcp.c -> eMBTCPSend(...)
+	UCHAR *pucMBTCPFrame = ( UCHAR * ) pucFrame - MB_TCP_FUNC;
+	USHORT usTCPLength = usLength + MB_TCP_FUNC;
+	/* The MBAP header is already initialized because the caller calls this
+	 * function with the buffer returned by the previous call. Therefore we
+	 * only have to update the length in the header. Note that the length
+	 * header includes the size of the Modbus PDU and the UID Byte. Therefore
+	 * the length is usLength plus one.
+	 */
+	pucMBTCPFrame[MB_TCP_LEN] = ( usLength + 1 ) >> 8U;
+	pucMBTCPFrame[MB_TCP_LEN + 1] = ( usLength + 1 ) & 0xFF;
+	lpMbConn1->len = usTCPLength;
+	netconn_write(lpMbConn1->newconn, lpMbConn1->aucTCPBuf, lpMbConn1->len, NETCONN_COPY);
+	return TRUE;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

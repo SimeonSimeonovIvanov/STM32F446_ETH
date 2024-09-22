@@ -218,6 +218,7 @@ eMBErrorCode    eMBDisable( void );
  *   eMBErrorCode::MB_ENOERR.
  */
 eMBErrorCode    eMBPoll( void );
+eMBErrorCode    eMBNoPollTcp( stModbusConn *lpModbusConn );
 
 /*! \ingroup modbus
  * \brief Configure the slave id of the device.

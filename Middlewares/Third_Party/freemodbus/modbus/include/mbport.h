@@ -122,7 +122,9 @@ BOOL            xMBTCPPortGetRequest( UCHAR **ppucMBTCPFrame, USHORT * usTCPLeng
 
 BOOL            xMBTCPPortSendResponse( const UCHAR *pucMBTCPFrame, USHORT usTCPLength );
 
-BOOL            xMBTCPPortSendResponseNull(void);
+BOOL            xMBTCPPortGetRequestNoPoll(stModbusConn *lpMbConn1, UCHAR ** ppucMBTCPFrame, USHORT * usTCPLength);
+
+BOOL            eMBTCPSendNoPoll(stModbusConn *lpMbConn1, const UCHAR * pucFrame, USHORT usLength );
 
 #ifdef __cplusplus
 PR_END_EXTERN_C

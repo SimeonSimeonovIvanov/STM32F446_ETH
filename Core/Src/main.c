@@ -46,6 +46,8 @@ typedef StaticTask_t osStaticThreadDef_t;
 typedef StaticQueue_t osStaticMessageQDef_t;
 typedef StaticSemaphore_t osStaticSemaphoreDef_t;
 /* USER CODE BEGIN PTD */
+//#define MB_POOL_TASK
+
 #define REG_DISC_START							1
 #define REG_DISC_SIZE							256
 
@@ -135,7 +137,11 @@ const osSemaphoreAttr_t myBinaryMbTCPSem01_attributes = {
 osSemaphoreId ModBUS_AcceptSemaphore;
 
 static StaticTask_t  ModBusTCPSlaveTaskCB[NUMBER_OF_MB_MASTER_TCP_CONN];
+#ifdef MB_POOL_TASK
 static StackType_t   ModBusTCPSlaveTaskStk[NUMBER_OF_MB_MASTER_TCP_CONN][256];
+#else
+static StackType_t   ModBusTCPSlaveTaskStk[NUMBER_OF_MB_MASTER_TCP_CONN][300];
+#endif
 const osThreadAttr_t ModBusTCPSlaveTask_attributes[NUMBER_OF_MB_MASTER_TCP_CONN] =
 {
 #if NUMBER_OF_MB_MASTER_TCP_CONN > 0
@@ -191,19 +197,19 @@ const osThreadAttr_t ModBusTCPSlaveTask_attributes[NUMBER_OF_MB_MASTER_TCP_CONN]
 };
 
 static StaticTask_t  ModBusTCPSlaveАcceptTaskCB;
-static StackType_t   ModBusTCPSlaveАcceptTaskStk[300];
-const osThreadAttr_t ModBusTCPSlaveАcceptTask_attributes =
+static StackType_t   ModBusTCPSlaveAcceptTaskStk[200];
+const osThreadAttr_t ModBusTCPSlaveAcceptTask_attributes =
 {
 	.name       = "mbTCPSАcceptTask",
 	.cb_mem     = &ModBusTCPSlaveАcceptTaskCB,
 	.cb_size    = sizeof(ModBusTCPSlaveАcceptTaskCB),
-	.stack_mem  = &ModBusTCPSlaveАcceptTaskStk,
-	.stack_size = sizeof(ModBusTCPSlaveАcceptTaskStk),
+	.stack_mem  = &ModBusTCPSlaveAcceptTaskStk,
+	.stack_size = sizeof(ModBusTCPSlaveAcceptTaskStk),
 	.priority   = (osPriority_t) osPriorityNormal,
 };
-
+#ifdef MB_POOL_TASK
 static StaticTask_t  ModBusSlaveTaskCB;
-static StackType_t   ModBusSlaveTaskStk[128];
+static StackType_t   ModBusSlaveTaskStk[300];
 const osThreadAttr_t ModBusSlaveTask_attributes =
 {
 	.name		= "mbSlaveTask",
@@ -213,7 +219,7 @@ const osThreadAttr_t ModBusSlaveTask_attributes =
 	.stack_size	= sizeof(ModBusSlaveTaskStk),
 	.priority	= (osPriority_t) osPriorityNormal,
 };
-
+#endif
 static osThreadId_t  BacnetTaskHandle;
 static StaticTask_t  BacnetTaskCB;
 static StackType_t   BacnetTaskStk[2048];//(512 + (MAX_APDU * 4)) * 4];
@@ -228,6 +234,10 @@ const osThreadAttr_t BacnetTask_attributes =
 };
 
 extern BACNET_BINARY_PV Binary_Output_Level[/*MAX_BINARY_OUTPUTS*/][BACNET_MAX_PRIORITY];
+
+osThreadId_t myModBusTCPSlaveAcceptTaskHandle;
+osThreadId_t myModBusSlaveTaskHandle;
+
 extern stModbusConn arrModbusConn[NUMBER_OF_MB_MASTER_TCP_CONN];
 
 static HMI_TASK_ARG hmi_task_arg;
@@ -252,7 +262,8 @@ void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 static void MX_TIM9_Init_New(void);
-void ModBusTCPSlaveTask(void *argument);
+void ModBusTCPSlaveAcceptTask(void *argument);
+void ModBusTCPSlavePollTask(void *argument);
 void ModBusSlaveTask(void *argument);
 void StartDefaultTask(void *argument);
 /* USER CODE END PFP */
@@ -344,6 +355,16 @@ int main(void)
   hmi_task_arg.arrInputLen = len_of_array( arrInput );
   hmi_task_arg.arrOutputLen = len_of_array( arrOutput );
   myHmiTaskHandle = osThreadNew(HmiTask, (void*) &hmi_task_arg, &myHmiTask_attributes);
+
+  myModBusTCPSlaveAcceptTaskHandle = osThreadNew(ModBusTCPSlaveAcceptTask, NULL, &ModBusTCPSlaveAcceptTask_attributes);
+#ifdef MB_POOL_TASK
+  myModBusSlaveTaskHandle = osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
+#endif
+
+  vTaskSuspend(myModBusTCPSlaveAcceptTaskHandle);
+#ifdef MB_POOL_TASK
+  vTaskSuspend(myModBusSlaveTaskHandle);
+#endif
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -841,8 +862,8 @@ eMBErrorCode eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usN
 
 	return MB_ENOREG;
 }
-
-void ModBusTCPSlaveTask(void *argument)
+#ifdef MB_POOL_TASK
+void ModBusTCPSlavePollTask(void *argument)
 {
 	stModbusConn *lpModbusConn = (stModbusConn *)argument;
 	eMBEventType eEvent;
@@ -863,12 +884,12 @@ void ModBusTCPSlaveTask(void *argument)
 				eEvent = EV_FRAME_RECEIVED;
 				if( xQueueSend(lpModbusConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY) )
 				{
-					eMBEventType eEvent = EV_READY;
-					if( xMBPortEventGetTX(lpModbusConn, &eEvent) )
+					eEvent = EV_READY;
+					if( xQueueReceive(lpModbusConn->xQueueMbTX, (void *)&eEvent, portTICK_RATE_MS * 1000) )
 					{
 						if( EV_FRAME_SENT == eEvent )
 						{
-							netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
+							eEvent = eEvent;
 						}
 					}
 				}
@@ -883,7 +904,7 @@ void ModBusTCPSlaveTask(void *argument)
 		osSemaphoreRelease(ModBUS_AcceptSemaphore);
 	}
 }
-
+#else
 void ModBusTCPSlaveNoPollTask(void *argument)
 {
 	stModbusConn *lpModbusConn = (stModbusConn *)argument;
@@ -900,10 +921,7 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 			do
 			{
 				lpModbusConn->len = pbuf_copy_partial(buf->p, lpModbusConn->aucTCPBuf, len_of_array(lpModbusConn->aucTCPBuf), 0);
-				if( MB_ENOERR == eMBNoPollTcp(lpModbusConn) )
-				{
-					netconn_write(lpModbusConn->newconn, lpModbusConn->aucTCPBuf, lpModbusConn->len, NETCONN_COPY);
-				}
+				eMBNoPollTcp(lpModbusConn);
 			} while( netbuf_next(buf) > 0 );
 			netbuf_delete(buf);
 			portYIELD();
@@ -915,8 +933,8 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 		osSemaphoreRelease(ModBUS_AcceptSemaphore);
 	}
 }
-
-void ModBusTCPSlaveАcceptTask(void *argument)
+#endif
+void ModBusTCPSlaveAcceptTask(void *argument)
 {
 	struct netconn *conn, *newconn;
 	uint8_t i;
@@ -926,8 +944,11 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 	for( i = 0; i < len_of_array(arrModbusConn); i++ )
 	{
 		arrModbusConn[i].newconn = NULL;
-//		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlaveTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+#ifdef MB_POOL_TASK
+		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlavePollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+#else
 		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlaveNoPollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
+#endif
 	}
 
 	while( 1 )
@@ -963,16 +984,16 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 		}
 	}
 }
-
+#ifdef MB_POOL_TASK
 void ModBusSlaveTask(void *argument)
 {
 	for(;;)
 	{
-		//eMBPoll();
-		//eMBPollTcp();
+		eMBPoll();
 		portYIELD();
 	}
 }
+#endif
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -981,6 +1002,8 @@ void ModBusSlaveTask(void *argument)
   * @param  argument: Not used
   * @retval None
   */
+volatile uint8_t get_mem_stat = 0;
+volatile HeapStats_t xHeapStats;
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
@@ -996,9 +1019,10 @@ void StartDefaultTask(void *argument)
 		vTaskDelay(5);
 	}
 
-	osThreadNew(ModBusTCPSlaveАcceptTask, NULL, &ModBusTCPSlaveАcceptTask_attributes);
-	osThreadNew(ModBusSlaveTask, NULL, &ModBusSlaveTask_attributes);
-
+	vTaskResume(myModBusTCPSlaveAcceptTaskHandle);
+#ifdef MB_POOL_TASK
+	vTaskResume(myModBusSlaveTaskHandle);
+#endif
 	for(;;)
 	{
 		//enc424j600EventHandler();
@@ -1015,6 +1039,13 @@ void StartDefaultTask(void *argument)
 //			usRS485PortLed[0] ^= 1;
 		}
 		xSemaphoreGive(myBinarySemSpiHandle);
+
+		if( get_mem_stat )
+		{
+			vPortGetHeapStats(&xHeapStats);
+			get_mem_stat = 0;
+		}
+
 		portYIELD();
 	}
   /* USER CODE END 5 */

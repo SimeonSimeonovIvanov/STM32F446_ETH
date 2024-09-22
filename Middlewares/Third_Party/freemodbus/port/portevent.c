@@ -75,6 +75,10 @@ void vMBPortEventClose( void )
 ///////////////////////////////////////////////////////////////////////////////
 BOOL xMBPortEventPost(eMBEventType eEvent)
 {
+	if( NULL == lpMbConn )
+	{
+		return FALSE;
+	}
 	return xQueueSend(lpMbConn->xQueueMbRX, (const void *)&eEvent, portMAX_DELAY);
 }
 
@@ -83,31 +87,26 @@ BOOL xMBPortEventGet(eMBEventType * peEvent)
 	static uint8_t i = 0;
 	BOOL res = FALSE;
 
+	*peEvent = EV_READY;
 	if( xQueueReceive(arrModbusConn[i].xQueueMbRX, peEvent, 0) )
 	{
+		taskENTER_CRITICAL();
 		lpMbConn = &arrModbusConn[i];
+		taskEXIT_CRITICAL();
 		res = TRUE;
 	}
 
-	if( ++i >= len_of_array(arrModbusConn) )
+	if( EV_READY == *peEvent )
 	{
-		i = 0;
+		taskENTER_CRITICAL();
+		lpMbConn = NULL;
+		taskEXIT_CRITICAL();
+		if( ++i >= len_of_array(arrModbusConn) )
+		{
+			i = 0;
+		}
 	}
 
 	return res;
-}
-///////////////////////////////////////////////////////////////////////////////
-BOOL xMBPortEventPostTX(stModbusConn *lpMbConn, eMBEventType eEvent)
-{
-	return xQueueSend(lpMbConn->xQueueMbTX, (const void *)&eEvent, portMAX_DELAY);
-}
-
-BOOL xMBPortEventGetTX(stModbusConn *lpMbConn, eMBEventType *peEvent)
-{
-	if( xQueueReceive(lpMbConn->xQueueMbTX, peEvent, portTICK_RATE_MS * 1000) )
-	{
-		return TRUE;
-	}
-	return FALSE;
 }
 ///////////////////////////////////////////////////////////////////////////////
