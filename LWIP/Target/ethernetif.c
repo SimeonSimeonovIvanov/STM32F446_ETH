@@ -41,6 +41,7 @@
 #define IFNAME1 't'
 
 extern osSemaphoreId_t myBinarySemSpiHandle;
+extern struct netif gnetif;
 
 __ALIGN_BEGIN uint8_t Rx_Buff[ETH_RX_BUF_SIZE] __ALIGN_END; /* Ethernet Receive Buffer */
 //__ALIGN_BEGIN uint8_t Tx_Buff[ETH_TX_BUF_SIZE] __ALIGN_END; /* Ethernet Transmit Buffer */
@@ -62,6 +63,7 @@ const osThreadAttr_t Ethernetif_InputTask_attributes =
 	.priority   = (osPriority_t) osPriorityNormal,
 };
 
+static struct tcpip_api_call_data tcpip_api_call_link_up_down_data;
 static struct tcpip_api_call_data tcpip_api_call_dhcp_start_data;
 static struct tcpip_api_call_data tcpip_api_call_httpd_init_data;
 
@@ -187,8 +189,8 @@ static struct pbuf * low_level_input(struct netif *netif)
 	uint16_t len = 0;
 
 	xSemaphoreTake(myBinarySemSpiHandle, (TickType_t)portMAX_DELAY);
-	len = enc424j600PacketReceive( Rx_Buff, 2*ETH_RX_BUF_SIZE );
-	if( len<4 )
+	len = enc424j600PacketReceive(Rx_Buff, sizeof(Rx_Buff));
+	if( len < 4 )
 	{
 		xSemaphoreGive(myBinarySemSpiHandle);
 		return NULL;
@@ -385,9 +387,22 @@ u32_t sys_now(void)
   return HAL_GetTick();
 }
 
+err_t tcpip_api_call_netif_set_link_up(struct tcpip_api_call_data *call)
+{
+	netif_set_up(&gnetif);
+	netif_set_link_up(&gnetif);
+	return ERR_OK;
+}
+
+err_t tcpip_api_call_netif_set_link_down(struct tcpip_api_call_data *call)
+{
+	netif_set_down(&gnetif);
+	netif_set_link_down(&gnetif);
+	return ERR_OK;
+}
+
 err_t tcpip_api_call_dhcp_start(struct tcpip_api_call_data *call)
 {
-	extern struct netif gnetif;
 	dhcp_start(&gnetif);
 	return ERR_OK;
 }
@@ -403,7 +418,7 @@ void ethernetif_set_link(void* argument)
 	struct link_str *link_arg = (struct link_str *)argument;
 	uint32_t is_link_up;
 
-	//tcpip_api_call(tcpip_api_call_httpd_init, &tcpip_api_call_httpd_init_data);
+	tcpip_api_call(tcpip_api_call_httpd_init, &tcpip_api_call_httpd_init_data);
 
 	for(;;)
 	{
@@ -417,14 +432,12 @@ void ethernetif_set_link(void* argument)
 		/* Check whether the netif link down and the PHY link is up */
 		if( !netif_is_link_up(link_arg->netif) && is_link_up )
 		{	/* network cable is connected */
-			netif_set_up(link_arg->netif);
-			netif_set_link_up(link_arg->netif);
+			tcpip_api_call(tcpip_api_call_netif_set_link_up, &tcpip_api_call_link_up_down_data);
 			tcpip_api_call(tcpip_api_call_dhcp_start, &tcpip_api_call_dhcp_start_data);
 		} else
 		if( netif_is_link_up(link_arg->netif) && !is_link_up )
 		{	/* network cable is dis-connected */
-			netif_set_down(link_arg->netif);
-			netif_set_link_down(link_arg->netif);
+			tcpip_api_call(tcpip_api_call_netif_set_link_down, &tcpip_api_call_link_up_down_data);
 		}
 		osSemaphoreRelease(link_arg->semaphore);
 	}

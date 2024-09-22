@@ -99,7 +99,7 @@
 /*----- Value in opt.h for DEFAULT_ACCEPTMBOX_SIZE: 0 -----*/
 #define DEFAULT_ACCEPTMBOX_SIZE 10
 /*----- Value in opt.h for RECV_BUFSIZE_DEFAULT: INT_MAX -----*/
-#define RECV_BUFSIZE_DEFAULT 2000
+#define RECV_BUFSIZE_DEFAULT INT_MAX
 /*----- Default Value for LWIP_HTTPD: 0 ---*/
 #define LWIP_HTTPD 1
 /*----- Value in opt.h for HTTPD_USE_CUSTOM_FSDATA: 0 -----*/
@@ -129,28 +129,31 @@
 /*----- Default Value for LWIP_DBG_MIN_LEVEL: LWIP_DBG_LEVEL_ALL ---*/
 #define LWIP_DBG_MIN_LEVEL LWIP_DBG_MASK_LEVEL
 /*----- Value in opt.h for MEMP_NUM_RAW_PCB: 4 -----*/
-#define MEMP_NUM_RAW_PCB                5
+#define MEMP_NUM_RAW_PCB                8
 /*----- Value in opt.h for MEMP_NUM_TCP_PCB: 5 -----*/
 #define MEMP_NUM_TCP_PCB                10
 /*----- Value in opt.h for MEMP_NUM_TCP_PCB_LISTEN: 8 -----*/
-#define MEMP_NUM_TCP_PCB_LISTEN         12
+#define MEMP_NUM_TCP_PCB_LISTEN         16
 /*----- Value in opt.h for MEMP_NUM_NETBUF: 2 -----*/
-#define MEMP_NUM_NETBUF                 6
+#define MEMP_NUM_NETBUF                 10
 /*----- Value in opt.h for MEMP_NUM_NETCONN: 4 -----*/
 #define MEMP_NUM_NETCONN                8
 /*----- Value in opt.h for LWIP_SO_SNDTIMEO: 0 -----*/
 #define LWIP_SO_SNDTIMEO                1
 /*----- Value in opt.h for LWIP_SO_RCVTIMEO: 0 -----*/
 #define LWIP_SO_RCVTIMEO                1
+/*----- Value in opt.h for LWIP_TCPIP_CORE_LOCKING: 0 -----*/
+// Set in "C/C++ Build -> Settings -> MCU GCC Compiler -> Preprocessor"
+//#define LWIP_TCPIP_CORE_LOCKING       1
+/*----- Value in opt.h for LWIP_TCPIP_CORE_LOCKING_INPUT: 0 -----*/
+#define LWIP_TCPIP_CORE_LOCKING_INPUT   0
 /*-----------------------------------------------------------------------------*/
-/* USER CODE BEGIN 1 */
 extern void *pvPortMalloc( size_t xWantedSize );
 extern void vPortFree( void *pv );
 
 #define MEM_CUSTOM_FREE(p)        vPortFree(p)
 #define MEM_CUSTOM_MALLOC(s)      pvPortMalloc(s)
 #define MEM_CUSTOM_CALLOC(n,s)    pvPortMalloc(n*s)
-/* USER CODE END 1 */
 
 #ifdef __cplusplus
 }

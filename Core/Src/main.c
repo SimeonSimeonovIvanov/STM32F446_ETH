@@ -132,8 +132,10 @@ const osSemaphoreAttr_t myBinaryMbTCPSem01_attributes = {
   .cb_size = sizeof(myBinaryMbTCPSem01ControlBlock),
 };
 
+osSemaphoreId ModBUS_AcceptSemaphore;
+
 static StaticTask_t  ModBusTCPSlaveTaskCB[NUMBER_OF_MB_MASTER_TCP_CONN];
-static StackType_t   ModBusTCPSlaveTaskStk[NUMBER_OF_MB_MASTER_TCP_CONN][200];
+static StackType_t   ModBusTCPSlaveTaskStk[NUMBER_OF_MB_MASTER_TCP_CONN][256];
 const osThreadAttr_t ModBusTCPSlaveTask_attributes[NUMBER_OF_MB_MASTER_TCP_CONN] =
 {
 #if NUMBER_OF_MB_MASTER_TCP_CONN > 0
@@ -290,9 +292,10 @@ int main(void)
   MX_UART4_Init();
   MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
-//__HAL_DBGMCU_FREEZE_TIM9();
+  /////////////////////////////////////////////////////////////////////////////
+  __HAL_DBGMCU_FREEZE_TIM9();
   HAL_TIM_PWM_Start( &htim9, TIM_CHANNEL_1 );
-
+  /////////////////////////////////////////////////////////////////////////////
   const uint8_t ucSlaveID[] = { 0xAA, 0xBB, 0xCC };
   eMBErrorCode eStatus;
   //eStatus = eMBInit( MB_TCP, 0x0A, 0, 38400, MB_PAR_EVEN );
@@ -341,8 +344,6 @@ int main(void)
   hmi_task_arg.arrInputLen = len_of_array( arrInput );
   hmi_task_arg.arrOutputLen = len_of_array( arrOutput );
   myHmiTaskHandle = osThreadNew(HmiTask, (void*) &hmi_task_arg, &myHmiTask_attributes);
-
-  MX_LWIP_Init();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -440,7 +441,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -849,10 +850,7 @@ void ModBusTCPSlaveTask(void *argument)
 
 	while(1)
 	{
-		if( NULL == lpModbusConn->newconn )
-		{
-			vTaskSuspend(lpModbusConn->hTask/*NULL*/);
-		}
+		vTaskSuspend(NULL);
 
 		//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
 		netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
@@ -882,6 +880,7 @@ void ModBusTCPSlaveTask(void *argument)
 		netconn_close(lpModbusConn->newconn);
 		netconn_delete(lpModbusConn->newconn);
 		lpModbusConn->newconn = NULL;
+		osSemaphoreRelease(ModBUS_AcceptSemaphore);
 	}
 }
 
@@ -892,10 +891,7 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 
 	while(1)
 	{
-		if( NULL == lpModbusConn->newconn )
-		{
-			vTaskSuspend(lpModbusConn->hTask/*NULL*/);
-		}
+		vTaskSuspend(NULL);
 
 		//netconn_set_sendtimeout(lpModbusConn->newconn, 5000);
 		netconn_set_recvtimeout(lpModbusConn->newconn, 5000);
@@ -916,14 +912,16 @@ void ModBusTCPSlaveNoPollTask(void *argument)
 		netconn_close(lpModbusConn->newconn);
 		netconn_delete(lpModbusConn->newconn);
 		lpModbusConn->newconn = NULL;
+		osSemaphoreRelease(ModBUS_AcceptSemaphore);
 	}
 }
 
 void ModBusTCPSlaveАcceptTask(void *argument)
 {
-	err_t err, accept_err;
-	struct netconn *conn;
-	int i;
+	struct netconn *conn, *newconn;
+	uint8_t i;
+
+	ModBUS_AcceptSemaphore = osSemaphoreNew(1, 1, NULL);
 
 	for( i = 0; i < len_of_array(arrModbusConn); i++ )
 	{
@@ -932,37 +930,38 @@ void ModBusTCPSlaveАcceptTask(void *argument)
 		arrModbusConn[i].hTask = osThreadNew(ModBusTCPSlaveNoPollTask, &arrModbusConn[i], &ModBusTCPSlaveTask_attributes[i]);
 	}
 
-	conn = netconn_new(NETCONN_TCP);
-	if( NULL != conn )
+	while( 1 )
 	{
-		err = netconn_bind(conn, IP_ADDR_ANY, 502);
-		if( ERR_OK == err )
+		while( NULL == (conn = netconn_new(NETCONN_TCP)) )
 		{
-			netconn_listen(conn);
-			while(1)
+			vTaskDelay(500);
+		}
+		while( ERR_OK != netconn_bind(conn, IP_ADDR_ANY, 502) )
+		{
+			vTaskDelay(500);
+		}
+		while( ERR_OK != netconn_listen(conn) )
+		{
+			vTaskDelay(500);
+		}
+
+		while( 1 )
+		{
+			for( i = 0; i < len_of_array(arrModbusConn); i++ )
 			{
-				i = 0;
-				while( (NULL != arrModbusConn[i].newconn) )//|| (eSuspended != eTaskGetState(arrModbusConn[i].hTask)))
+				if( NULL == arrModbusConn[i].newconn )
 				{
-					if( ++i >= len_of_array(arrModbusConn) )
+					while( ERR_OK != netconn_accept(conn, &newconn) )
 					{
-						vTaskDelay(5);
-						i = 0;
+						vTaskDelay(500);
 					}
-				}
-				accept_err = netconn_accept(conn, &arrModbusConn[i].newconn);
-				if( ERR_OK == accept_err )
-				{
+					arrModbusConn[i].newconn = newconn;
 					vTaskResume(arrModbusConn[i].hTask);
-				} else {
-					arrModbusConn[i].newconn = NULL;
 				}
 			}
+			osSemaphoreAcquire(ModBUS_AcceptSemaphore, portMAX_DELAY);
 		}
-		netconn_delete(conn);
 	}
-
-	osThreadExit();
 }
 
 void ModBusSlaveTask(void *argument)
@@ -989,6 +988,8 @@ void StartDefaultTask(void *argument)
   //MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
 	extern struct netif gnetif;
+
+	MX_LWIP_Init();
 
 	while( !netif_is_link_up(&gnetif) )
 	{
