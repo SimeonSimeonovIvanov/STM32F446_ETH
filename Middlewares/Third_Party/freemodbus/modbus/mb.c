@@ -442,10 +442,10 @@ eMBErrorCode eMBNoPollTcp( stModbusConn *lpModbusConn )
 			}
 			else if( xFuncHandlers[i].ucFunctionCode == ucFunctionCode )
 			{
-				extern osSemaphoreId_t myMbTCPSem01Handle;
-				xSemaphoreTake(myMbTCPSem01Handle, (TickType_t)portMAX_DELAY);
+				extern osSemaphoreId_t myBinaryMbTCPSem01Handle;
+				xSemaphoreTake(myBinaryMbTCPSem01Handle, (TickType_t)portMAX_DELAY);
 				eException = xFuncHandlers[i].pxHandler( ucMBFrame, &lpModbusConn->len );
-				xSemaphoreGive(myMbTCPSem01Handle);
+				xSemaphoreGive(myBinaryMbTCPSem01Handle);
 				break;
 			}
 		}

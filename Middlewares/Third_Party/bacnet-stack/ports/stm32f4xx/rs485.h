@@ -47,14 +47,15 @@ void rs485_rts_enable(bool enable);
 bool rs485_rts_enabled(void);
 bool rs485_byte_available(uint8_t *data_register);
 bool rs485_receive_error(void);
-bool rs485_bytes_send(uint8_t *buffer, /* data to send */
-    uint16_t nbytes); /* number of bytes of data */
+void rs485_bytes_send(const uint8_t *buffer, /* data to send */
+	uint16_t nbytes); /* number of bytes of data */
 
 uint32_t rs485_baud_rate(void);
 bool rs485_baud_rate_set(uint32_t baud);
 
 void rs485_silence_reset(void);
 bool rs485_silence_elapsed(uint32_t milliseconds);
+uint32_t rs485_silence_milliseconds(void);
 void rs485_silence_increment(unsigned int milliseconds);
 bool rs485_turnaround_elapsed(void);
 

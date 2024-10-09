@@ -70,6 +70,7 @@ void Error_Handler(void);
 #define CS2_GPIO_Port GPIOC
 #define UART4_RTS_Pin GPIO_PIN_15
 #define UART4_RTS_GPIO_Port GPIOA
+
 /* USER CODE BEGIN Private defines */
 #define NUMBER_OF_MB_MASTER_TCP_CONN	4
 #define NUMBER_OF_ADC_CHANNEL			4

@@ -37,7 +37,15 @@
 #include "bacnet/iam.h"
 /* BACnet objects */
 #include "bacnet/basic/object/device.h"
+#include "bacnet/basic/object/ai.h"
+#include "bacnet/basic/object/ao.h"
+#include "bacnet/basic/object/av.h"
+#include "bacnet/basic/object/bi.h"
 #include "bacnet/basic/object/bo.h"
+#include "bacnet/basic/object/bv.h"
+#include "bacnet/basic/object/ms-input.h"
+#include "bacnet/basic/object/mso.h"
+#include "bacnet/basic/object/msv.h"
 /* me */
 #include "bacnet.h"
 
@@ -45,14 +53,102 @@
 static struct mstimer DCC_Timer;
 #define DCC_CYCLE_SECONDS 1
 
+#include "bacnet/datalink/mstp.h"
+static struct mstp_port_struct_t MSTP_Port;
+static struct dlmstp_user_data_t UserData;
+static struct dlmstp_rs485_driver rs485_driver;
+
+static uint8_t InputBuffer[1000];
+static uint8_t OutputBuffer[1000];
+
+#ifndef BACNET_ANALOG_INPUTS_MAX
+#define BACNET_ANALOG_INPUTS_MAX 12
+#endif
+#ifndef BACNET_ANALOG_OUTPUTS_MAX
+#define BACNET_ANALOG_OUTPUTS_MAX 12
+#endif
+#ifndef BACNET_ANALOG_VALUES_MAX
+#define BACNET_ANALOG_VALUES_MAX 12
+#endif
+#ifndef BACNET_BINARY_INPUTS_MAX
+#define BACNET_BINARY_INPUTS_MAX 12
+#endif
+#ifndef BACNET_BINARY_OUTPUTS_MAX
+#define BACNET_BINARY_OUTPUTS_MAX 12
+#endif
+#ifndef BACNET_BINARY_VALUES_MAX
+#define BACNET_BINARY_VALUES_MAX 12
+#endif
+#ifndef BACNET_MULTISTATE_INPUTS_MAX
+#define BACNET_MULTISTATE_INPUTS_MAX 12
+#endif
+#ifndef BACNET_MULTISTATE_OUTPUTS_MAX
+#define BACNET_MULTISTATE_OUTPUTS_MAX 12
+#endif
+#ifndef BACNET_MULTISTATE_VALUES_MAX
+#define BACNET_MULTISTATE_VALUES_MAX 12
+#endif
+
 void bacnet_init(void)
 {
+	uint32_t instance;
+
     dlmstp_set_mac_address(2);
     dlmstp_set_max_master(127);
     /* initialize datalink layer */
-    dlmstp_init(NULL);
+    rs485_driver.init = rs485_init;
+	rs485_driver.send = rs485_bytes_send;
+    rs485_driver.read = rs485_byte_available;
+    rs485_driver.transmitting = rs485_rts_enabled;
+	rs485_driver.baud_rate = rs485_baud_rate;
+	rs485_driver.baud_rate_set = rs485_baud_rate_set;
+	rs485_driver.silence_milliseconds = rs485_silence_milliseconds;
+	rs485_driver.silence_reset = rs485_silence_reset;
+
+	UserData.RS485_Driver = (void *)&rs485_driver;
+
+    MSTP_Port.Nmax_info_frames = DLMSTP_MAX_INFO_FRAMES;
+    MSTP_Port.Nmax_master = DLMSTP_MAX_MASTER;
+    MSTP_Port.ZeroConfigEnabled = true;
+    MSTP_Port.SlaveNodeEnabled = false;
+
+    MSTP_Port.UserData = (void *)&UserData;
+    MSTP_Port.InputBuffer = InputBuffer;
+    MSTP_Port.OutputBuffer = OutputBuffer;
+    MSTP_Port.InputBufferSize = sizeof(InputBuffer) - 1;
+    MSTP_Port.OutputBufferSize = sizeof(OutputBuffer) - 1;
+
+    dlmstp_init((char *)&MSTP_Port);
     /* initialize objects */
     Device_Init(NULL);
+
+    for (instance = 1; instance <= BACNET_ANALOG_INPUTS_MAX; instance++) {
+        Analog_Input_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_ANALOG_OUTPUTS_MAX; instance++) {
+        Analog_Output_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_ANALOG_VALUES_MAX; instance++) {
+        Analog_Value_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_BINARY_INPUTS_MAX; instance++) {
+        Binary_Input_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_BINARY_OUTPUTS_MAX; instance++) {
+        Binary_Output_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_BINARY_VALUES_MAX; instance++) {
+        Binary_Value_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_MULTISTATE_INPUTS_MAX; instance++) {
+        Multistate_Input_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_MULTISTATE_OUTPUTS_MAX; instance++) {
+        Multistate_Output_Create(instance);
+    }
+    for (instance = 1; instance <= BACNET_MULTISTATE_VALUES_MAX; instance++) {
+        Multistate_Value_Create(instance);
+    }
 
     /* set up our confirmed service unrecognized service handler - required! */
     apdu_set_unrecognized_service_handler_handler(handler_unrecognized_service);

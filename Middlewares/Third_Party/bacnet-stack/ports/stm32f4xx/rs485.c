@@ -82,6 +82,15 @@ bool rs485_silence_elapsed(uint32_t interval)
 }
 
 /**
+ * @brief Return the RS-485 silence time in milliseconds
+ * @return silence time in milliseconds
+ */
+uint32_t rs485_silence_milliseconds(void)
+{
+    return mstimer_elapsed(&Silence_Timer);
+}
+
+/**
  * @brief Determine the turnaround time
  * @return amount of milliseconds
  */
@@ -236,7 +245,7 @@ bool rs485_byte_available(uint8_t *data_register)
  * @param nbytes - number of bytes to transmit
  * @return true if added to queue
  */
-bool rs485_bytes_send(uint8_t *buffer, uint16_t nbytes)
+void rs485_bytes_send(const uint8_t *buffer, uint16_t nbytes)
 {
     bool status = false;
 
@@ -254,8 +263,6 @@ bool rs485_bytes_send(uint8_t *buffer, uint16_t nbytes)
             status = true;
         }
     }
-
-    return status;
 }
 
 /**

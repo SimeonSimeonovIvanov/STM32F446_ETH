@@ -42,8 +42,6 @@
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
-typedef StaticTask_t osStaticThreadDef_t;
-typedef StaticQueue_t osStaticMessageQDef_t;
 typedef StaticSemaphore_t osStaticSemaphoreDef_t;
 /* USER CODE BEGIN PTD */
 //#define MB_POOL_TASK
@@ -71,67 +69,44 @@ typedef StaticSemaphore_t osStaticSemaphoreDef_t;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- SPI_HandleTypeDef hspi2;
+SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim9;
 
 UART_HandleTypeDef huart4;
 
-/* Definitions for DefaultTask */
-osThreadId_t DefaultTaskHandle;
-uint32_t StartDefaultTaskBuffer[ 200 ];
-osStaticThreadDef_t StartDefaultTaskControlBlock;
-const osThreadAttr_t DefaultTask_attributes = {
-  .name = "DefaultTask",
-  .cb_mem = &StartDefaultTaskControlBlock,
-  .cb_size = sizeof(StartDefaultTaskControlBlock),
-  .stack_mem = &StartDefaultTaskBuffer[0],
-  .stack_size = sizeof(StartDefaultTaskBuffer),
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for myHmiTask */
-osThreadId_t myHmiTaskHandle;
-uint32_t myHmiTaskBuffer[ 128 ];
-osStaticThreadDef_t myHmiTaskControlBlock;
-const osThreadAttr_t myHmiTask_attributes = {
-  .name = "myHmiTask",
-  .cb_mem = &myHmiTaskControlBlock,
-  .cb_size = sizeof(myHmiTaskControlBlock),
-  .stack_mem = &myHmiTaskBuffer[0],
-  .stack_size = sizeof(myHmiTaskBuffer),
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for myQueue01 */
-osMessageQueueId_t myQueue01Handle;
-uint8_t myQueue01Buffer[ 16 * sizeof( uint16_t ) ];
-osStaticMessageQDef_t myQueue01ControlBlock;
-const osMessageQueueAttr_t myQueue01_attributes = {
-  .name = "myQueue01",
-  .cb_mem = &myQueue01ControlBlock,
-  .cb_size = sizeof(myQueue01ControlBlock),
-  .mq_mem = &myQueue01Buffer,
-  .mq_size = sizeof(myQueue01Buffer)
-};
-/* Definitions for myBinarySem01 */
-osSemaphoreId_t myBinarySem01Handle;
-osStaticSemaphoreDef_t myBinarySem01ControlBlock;
-const osSemaphoreAttr_t myBinarySem01_attributes = {
-  .name = "myBinarySem01",
-  .cb_mem = &myBinarySem01ControlBlock,
-  .cb_size = sizeof(myBinarySem01ControlBlock),
-};
-/* USER CODE BEGIN PV */
+/* Definitions for myBinarySemSpi */
 osSemaphoreId_t myBinarySemSpiHandle;
 const osSemaphoreAttr_t myBinarySemSpi_attributes = {
   .name = "myBinarySemSpi"
 };
-
-osSemaphoreId_t myMbTCPSem01Handle;
+/* Definitions for myBinaryMbTCPSem01 */
+osSemaphoreId_t myBinaryMbTCPSem01Handle;
 osStaticSemaphoreDef_t myBinaryMbTCPSem01ControlBlock;
 const osSemaphoreAttr_t myBinaryMbTCPSem01_attributes = {
-  .name = "mbTCPSem01",
+  .name = "myBinaryMbTCPSem01",
   .cb_mem = &myBinaryMbTCPSem01ControlBlock,
   .cb_size = sizeof(myBinaryMbTCPSem01ControlBlock),
+};
+/* USER CODE BEGIN PV */
+/* Definitions for myHmiTask */
+osThreadId_t myHmiTaskHandle;
+uint32_t myHmiTaskBuffer[ 128 ];
+//osStaticThreadDef_t myHmiTaskControlBlock;
+const osThreadAttr_t myHmiTask_attributes = {
+  .name = "myHmiTask",
+//.cb_mem = &myHmiTaskControlBlock,
+//.cb_size = sizeof(myHmiTaskControlBlock),
+  .stack_mem = &myHmiTaskBuffer[0],
+  .stack_size = sizeof(myHmiTaskBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 osSemaphoreId ModBUS_AcceptSemaphore;
@@ -233,7 +208,7 @@ const osThreadAttr_t BacnetTask_attributes =
 		.priority	= (osPriority_t) osPriorityNormal,
 };
 
-extern BACNET_BINARY_PV Binary_Output_Level[/*MAX_BINARY_OUTPUTS*/][BACNET_MAX_PRIORITY];
+/*extern*/ BACNET_BINARY_PV Binary_Output_Level[16][BACNET_MAX_PRIORITY];
 
 osThreadId_t myModBusTCPSlaveAcceptTaskHandle;
 osThreadId_t myModBusSlaveTaskHandle;
@@ -279,6 +254,7 @@ extern osSemaphoreId s_xSemaphore;
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
   /* USER CODE END 1 */
 
@@ -329,8 +305,11 @@ int main(void)
   /* creation of myBinarySemSpi */
   myBinarySemSpiHandle = osSemaphoreNew(1, 1, &myBinarySemSpi_attributes);
 
+  /* creation of myBinaryMbTCPSem01 */
+  myBinaryMbTCPSem01Handle = osSemaphoreNew(1, 1, &myBinaryMbTCPSem01_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
-  myMbTCPSem01Handle = osSemaphoreNew(1, 1, &myBinaryMbTCPSem01_attributes);
+
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -343,7 +322,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  DefaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &DefaultTask_attributes);
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   BacnetTaskHandle = osThreadNew(BacnetTask, (void*)NULL, &BacnetTask_attributes);
@@ -375,6 +354,7 @@ int main(void)
   osKernelStart();
 
   /* We should never get here as control is now taken by the scheduler */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -462,7 +442,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -570,6 +550,8 @@ static void MX_UART4_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+/* USER CODE BEGIN MX_GPIO_Init_1 */
+/* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -624,6 +606,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
+/* USER CODE BEGIN MX_GPIO_Init_2 */
+/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
@@ -1007,8 +991,6 @@ volatile HeapStats_t xHeapStats;
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
-  /* init code for USB_DEVICE */
-  //MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
 	extern struct netif gnetif;
 
